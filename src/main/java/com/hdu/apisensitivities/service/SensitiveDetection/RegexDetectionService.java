@@ -42,17 +42,20 @@ public class RegexDetectionService implements SensitiveDetectionService {
     }
 
     @Override
-    public List<SensitiveEntity> detectSensitiveInfo(String text, String language, Set<String> includeTypes, ScenarioAnalysisResult context) {
+    public List<SensitiveEntity> detectSensitiveInfo(String text, String language, Set<String> includeTypes,
+            ScenarioAnalysisResult context) {
         if (text == null || text.trim().isEmpty()) {
             return Collections.emptyList();
         }
 
         List<SensitiveEntity> entities = new ArrayList<>();
 
-        // 检测预定义类型的敏感信息
+        // ========== 方式A：预定义正则模式 ==========
+        // PatternRegistry.getAllPatterns() 返回所有预定义的正则规则
         Map<SensitiveType, Pattern> patterns = PatternRegistry.getAllPatterns();
+
         for (Map.Entry<SensitiveType, Pattern> entry : patterns.entrySet()) {
-            // 如果includeTypes不为空，则只检测指定类型的敏感信息
+            // 如果指定了检测类型，只检测指定的类型
             if (includeTypes == null || includeTypes.contains(entry.getKey().name())) {
                 entities.addAll(detectWithPattern(text, entry.getKey(), entry.getValue(), context));
             }
@@ -71,12 +74,14 @@ public class RegexDetectionService implements SensitiveDetectionService {
     }
 
     @Override
-    public List<SensitiveEntity> detectSensitiveInfoInStructuredData(Map<String, Object> structuredData, String language) {
+    public List<SensitiveEntity> detectSensitiveInfoInStructuredData(Map<String, Object> structuredData,
+            String language) {
         return detectSensitiveInfoInStructuredData(structuredData, language, null);
     }
 
     @Override
-    public List<SensitiveEntity> detectSensitiveInfoInStructuredData(Map<String, Object> structuredData, String language, Set<String> includeTypes) {
+    public List<SensitiveEntity> detectSensitiveInfoInStructuredData(Map<String, Object> structuredData,
+            String language, Set<String> includeTypes) {
         if (structuredData == null || structuredData.isEmpty()) {
             return Collections.emptyList();
         }
@@ -93,7 +98,8 @@ public class RegexDetectionService implements SensitiveDetectionService {
     }
 
     @Override
-    public List<SensitiveEntity> detectSensitiveInfoInBinary(byte[] binaryData, String dataType, String language, Set<String> includeTypes) {
+    public List<SensitiveEntity> detectSensitiveInfoInBinary(byte[] binaryData, String dataType, String language,
+            Set<String> includeTypes) {
         if (binaryData == null || binaryData.length == 0) {
             return Collections.emptyList();
         }
@@ -124,21 +130,21 @@ public class RegexDetectionService implements SensitiveDetectionService {
     }
 
     @Override
-    public Map<String, List<SensitiveEntity>> batchDetect(List<String> texts, String language, Set<String> includeTypes) {
+    public Map<String, List<SensitiveEntity>> batchDetect(List<String> texts, String language,
+            Set<String> includeTypes) {
         return texts.parallelStream()
                 .collect(Collectors.toMap(
                         text -> text,
-                        text -> detectSensitiveInfo(text, language, includeTypes)
-                ));
+                        text -> detectSensitiveInfo(text, language, includeTypes)));
     }
 
     @Override
-    public Map<String, List<SensitiveEntity>> batchDetectStructuredData(Map<String, Map<String, Object>> dataMap, String language) {
+    public Map<String, List<SensitiveEntity>> batchDetectStructuredData(Map<String, Map<String, Object>> dataMap,
+            String language) {
         return dataMap.entrySet().parallelStream()
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
-                        entry -> detectSensitiveInfoInStructuredData(entry.getValue(), language)
-                ));
+                        entry -> detectSensitiveInfoInStructuredData(entry.getValue(), language)));
     }
 
     @Override
@@ -181,7 +187,8 @@ public class RegexDetectionService implements SensitiveDetectionService {
     }
 
     @Override
-    public List<SensitiveEntity> detectByDataType(Object data, String dataType, String language, Set<String> includeTypes) {
+    public List<SensitiveEntity> detectByDataType(Object data, String dataType, String language,
+            Set<String> includeTypes) {
         if (data == null) {
             return Collections.emptyList();
         }
@@ -208,7 +215,8 @@ public class RegexDetectionService implements SensitiveDetectionService {
                     return detectSensitiveInfoInBinary((byte[]) data, dataType, language, includeTypes);
                 } else if (data instanceof MultipartFile) {
                     try {
-                        return detectSensitiveInfoInBinary(((MultipartFile) data).getBytes(), dataType, language, includeTypes);
+                        return detectSensitiveInfoInBinary(((MultipartFile) data).getBytes(), dataType, language,
+                                includeTypes);
                     } catch (IOException e) {
                         log.error("无法从MultipartFile获取字节数据: {}", e.getMessage(), e);
                         return Collections.emptyList();
@@ -221,7 +229,8 @@ public class RegexDetectionService implements SensitiveDetectionService {
         }
     }
 
-    private List<SensitiveEntity> detectWithPattern(String text, SensitiveType type, Pattern pattern, ScenarioAnalysisResult context) {
+    private List<SensitiveEntity> detectWithPattern(String text, SensitiveType type, Pattern pattern,
+            ScenarioAnalysisResult context) {
         List<SensitiveEntity> entities = new ArrayList<>();
         Matcher matcher = pattern.matcher(text);
 
@@ -230,7 +239,8 @@ public class RegexDetectionService implements SensitiveDetectionService {
 
         while (matcher.find()) {
             String matchedText = matcher.group();
-            double confidence = calculateConfidence(text, matcher.start(), matcher.end(), matchedText, type, strictMode);
+            double confidence = calculateConfidence(text, matcher.start(), matcher.end(), matchedText, type,
+                    strictMode);
 
             // 根据阈值过滤
             if (confidence >= threshold) {
@@ -267,7 +277,11 @@ public class RegexDetectionService implements SensitiveDetectionService {
         return entities;
     }
 
-    private double calculateConfidence(String fullText, int start, int end, String matchedText, SensitiveType type, boolean strictMode) {
+    // TODO: 置信度优化，比如195-5780-9903格式化的手机号回被 验证1：格式校验 忽略
+
+    // 正则只是找到了候选，还需要验证它是否真的是敏感信息！
+    private double calculateConfidence(String fullText, int start, int end, String matchedText, SensitiveType type,
+            boolean strictMode) {
         // 基于规则计算置信度
         double baseConfidence = 0.9;
 
@@ -276,7 +290,7 @@ public class RegexDetectionService implements SensitiveDetectionService {
             baseConfidence = 0.5;
         }
 
-        // 1. 基础格式校验
+        // ========== 验证1：格式校验 ==========
         boolean formatValid = true;
         switch (type) {
             case PHONE_NUMBER:
@@ -315,7 +329,15 @@ public class RegexDetectionService implements SensitiveDetectionService {
             return hasContext ? 0.7 : 0.4;
         }
 
-        // 2. 上下文校验 (Context Awareness)
+        // ========== 验证2：上下文检测 ==========
+        // TODO:文本上匹配正则但是上下文错判（误报）
+        /*
+         * 场景:
+         * "验证码123456在5分钟内有效"
+         * PatternRegistry可能匹配到123456（银行卡/手机号/代码都可能），checkContext没有明确禁止“验证码”模式，可能进入脱敏
+         * 结果: 误把“验证码”等非隐私值当敏感处理
+         */
+
         // 检查前后20个字符内是否有相关关键词
         boolean hasContext = checkContext(fullText, start, end, type);
 
@@ -330,7 +352,7 @@ public class RegexDetectionService implements SensitiveDetectionService {
         return Math.max(0.0, Math.min(1.0, baseConfidence));
     }
 
-    // 检查上下文关键词
+    // ========== 验证3：上下文关键词匹配 ==========
     private boolean checkContext(String text, int start, int end, SensitiveType type) {
         int contextRange = 20;
         int left = Math.max(0, start - contextRange);
@@ -338,8 +360,10 @@ public class RegexDetectionService implements SensitiveDetectionService {
 
         String surroundingText = text.substring(left, right).toLowerCase();
         List<String> keywords = getKeywordsForType(type);
+        // 对于手机号，关键词包括：["电话", "手机", "号码", "联系", "call", "phone"]
 
-        if (keywords.isEmpty()) return false;
+        if (keywords.isEmpty())
+            return false;
 
         for (String keyword : keywords) {
             if (surroundingText.contains(keyword)) {
@@ -349,6 +373,7 @@ public class RegexDetectionService implements SensitiveDetectionService {
         return false;
     }
 
+    // TODO: 这个关键词也少，也死板
     private List<String> getKeywordsForType(SensitiveType type) {
         switch (type) {
             case PHONE_NUMBER:
@@ -369,9 +394,10 @@ public class RegexDetectionService implements SensitiveDetectionService {
         }
     }
 
-    // 计算香农熵
+    // ========== 验证4：熵值校验（用于API密钥、密码） ==========
     private double calculateEntropy(String s) {
-        if (s == null || s.isEmpty()) return 0.0;
+        if (s == null || s.isEmpty())
+            return 0.0;
 
         Map<Character, Integer> frequency = new HashMap<>();
         for (char c : s.toCharArray()) {
@@ -422,8 +448,8 @@ public class RegexDetectionService implements SensitiveDetectionService {
 
         // 验证最后一位校验码
         char[] chars = idCard.toCharArray();
-        int[] coefficient = {7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2};
-        char[] checkCodes = {'1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2'};
+        int[] coefficient = { 7, 9, 10, 5, 8, 4, 2, 1, 6, 3, 7, 9, 10, 5, 8, 4, 2 };
+        char[] checkCodes = { '1', '0', 'X', '9', '8', '7', '6', '5', '4', '3', '2' };
 
         int sum = 0;
         for (int i = 0; i < 17; i++) {
@@ -449,12 +475,8 @@ public class RegexDetectionService implements SensitiveDetectionService {
         return plate.matches(regex);
     }
 
-    // 递归检测结构化数据中的敏感信息
-    private void detectInStructuredData(Object data, String fieldPath, List<SensitiveEntity> entities, String language) {
-        detectInStructuredData(data, fieldPath, entities, language, null);
-    }
-
-    private void detectInStructuredData(Object data, String fieldPath, List<SensitiveEntity> entities, String language, Set<String> includeTypes) {
+    private void detectInStructuredData(Object data, String fieldPath, List<SensitiveEntity> entities, String language,
+            Set<String> includeTypes) {
         if (data == null) {
             return;
         }
@@ -530,8 +552,7 @@ public class RegexDetectionService implements SensitiveDetectionService {
                     try {
                         current.setOriginalText(
                                 current.getOriginalText() +
-                                        next.getOriginalText().substring(current.getEnd() - next.getStart())
-                        );
+                                        next.getOriginalText().substring(current.getEnd() - next.getStart()));
                     } catch (IndexOutOfBoundsException e) {
                         // 避免字符串索引越界，直接使用较长的文本
                         current.setOriginalText(next.getOriginalText());

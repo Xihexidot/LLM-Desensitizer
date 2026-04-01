@@ -3,6 +3,7 @@ package com.hdu.apisensitivities.config;
 import com.hdu.apisensitivities.interceptor.Interceptor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
 import org.springframework.web.servlet.config.annotation.InterceptorRegistry;
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
@@ -13,7 +14,7 @@ public class WebConfig implements WebMvcConfigurer {
 
     //跨域配置类
     @Override
-    public void addCorsMappings(CorsRegistry registry) {
+    public void addCorsMappings(@NonNull CorsRegistry registry) {
         registry.addMapping("/**")  // 允许所有路径
                 .allowedOriginPatterns("http://localhost:*", "http://127.0.0.1:*") // 允许本地所有端口（开发环境）
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS") // 允许的 HTTP 方法

@@ -8,8 +8,6 @@ import org.springframework.stereotype.Component;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.util.regex.Pattern;
 
 @Slf4j
 @Component
@@ -253,8 +251,6 @@ public class DataReplacementDesensitizationStrategy implements DesensitizationSt
         if (original.contains("@")) {
             String[] parts = original.split("@");
             String username = parts[0];
-            String domain = parts[1];
-            
             // 生成虚假用户名
             StringBuilder fakeUsername = new StringBuilder();
             for (int i = 0; i < username.length(); i++) {

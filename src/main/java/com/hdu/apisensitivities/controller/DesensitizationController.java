@@ -14,12 +14,13 @@ import org.springframework.web.multipart.MultipartFile;
 import java.util.List;
 import java.util.Map;
 
+// 【入口1】接收HTTP请求
+
 @RestController
 @RequestMapping("/desensitize")
 public class DesensitizationController {
 
     private final DesensitizationManager desensitizationManager;
-    private final SensitiveDetectionService detectionService;
     private final DataParserManager dataParserManager;
 
     @Autowired
@@ -27,7 +28,6 @@ public class DesensitizationController {
                                      SensitiveDetectionService detectionService,
                                      DataParserManager dataParserManager) {
         this.desensitizationManager = desensitizationManager;
-        this.detectionService = detectionService;
         this.dataParserManager = dataParserManager;
     }
 
@@ -92,38 +92,6 @@ public class DesensitizationController {
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
                     new DesensitizationResponse(null, null, null, false, "处理二进制数据失败: " + e.getMessage()));
-        }
-    }
-
-    /**
-     * 根据文件扩展名推断数据类型
-     */
-    private String inferDataType(String filename) {
-        if (filename == null) return "BINARY";
-
-        String extension = filename.toLowerCase().substring(filename.lastIndexOf(".") + 1);
-
-        switch (extension) {
-            case "jpg":
-            case "jpeg":
-            case "png":
-            case "gif":
-            case "bmp":
-                return "IMAGE";
-            case "mp3":
-            case "wav":
-            case "flac":
-                return "AUDIO";
-            case "pdf":
-                return "PDF";
-            case "doc":
-            case "docx":
-                return "DOC";
-            case "xls":
-            case "xlsx":
-                return "EXCEL";
-            default:
-                return "BINARY";
         }
     }
 

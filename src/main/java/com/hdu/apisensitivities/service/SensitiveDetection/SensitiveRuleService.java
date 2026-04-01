@@ -3,7 +3,6 @@ package com.hdu.apisensitivities.service.SensitiveDetection;
 import com.hdu.apisensitivities.dto.SensitiveRule;
 
 import com.hdu.apisensitivities.mapper.SensitiveRuleMapper;
-import com.hdu.apisensitivities.service.SensitiveDetection.SensitiveDetectionService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

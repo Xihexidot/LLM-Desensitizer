@@ -1,6 +1,9 @@
 package com.hdu.apisensitivities.interceptor;
 
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.lang.NonNull;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -12,7 +15,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class Interceptor implements HandlerInterceptor {
 
     @Override
-    public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) throws Exception {
+    public boolean preHandle(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler) throws Exception {
         // 在请求处理之前进行调用
         log.info("API访问拦截: {} {}", request.getMethod(), request.getRequestURI());
 
@@ -24,7 +27,7 @@ public class Interceptor implements HandlerInterceptor {
     }
 
     @Override
-    public void afterCompletion(HttpServletRequest request, HttpServletResponse response, Object handler, Exception ex) throws Exception {
+    public void afterCompletion(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response, @NonNull Object handler, @Nullable Exception ex) throws Exception {
         // 在整个请求结束之后被调用，用于资源清理
         if (ex != null) {
             log.error("API调用异常: {} {} - {}", request.getMethod(), request.getRequestURI(), ex.getMessage());

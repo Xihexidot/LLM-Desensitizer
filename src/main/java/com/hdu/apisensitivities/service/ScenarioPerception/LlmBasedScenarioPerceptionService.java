@@ -77,6 +77,7 @@ public class LlmBasedScenarioPerceptionService implements ScenarioPerceptionServ
         }
     }
 
+    // TODO: 这里只是构建提示词问AI，所发送的可能包含敏感信息的文本来分析场景来用不同场景下的正则匹配规则，有点本末导致
     private String buildPrompt(String content) {
         return """
                 你是一个专业的数据安全专家和情景分析助手。请分析以下用户输入的文本内容，识别其所属的业务情景，并给出相应的敏感信息处理建议。

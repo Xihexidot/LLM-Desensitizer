@@ -37,7 +37,8 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
 
         // 过滤掉没有正确位置信息的实体（例如来自结构化数据的实体）
         List<SensitiveEntity> validEntities = sensitiveEntities.stream()
-                .filter(entity -> entity.getStart() >= 0 && entity.getEnd() <= text.length() && entity.getStart() <= entity.getEnd())
+                .filter(entity -> entity.getStart() >= 0 && entity.getEnd() <= text.length()
+                        && entity.getStart() <= entity.getEnd())
                 .sorted((e1, e2) -> Integer.compare(e2.getStart(), e1.getStart()))
                 .collect(Collectors.toList());
 
@@ -67,17 +68,18 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
     }
 
     @Override
-    public Map<String, Object> desensitizeStructuredData(Map<String, Object> structuredData, List<SensitiveEntity> sensitiveEntities) {
+    public Map<String, Object> desensitizeStructuredData(Map<String, Object> structuredData,
+            List<SensitiveEntity> sensitiveEntities) {
         if (structuredData == null) {
             return null;
         }
-        
+
         Map<String, Object> dataMap = structuredData;
-        
+
         // 优先处理带有字段路径的实体
         List<SensitiveEntity> pathEntities = new ArrayList<>();
         List<SensitiveEntity> nonPathEntities = new ArrayList<>();
-        
+
         // 分类实体
         for (SensitiveEntity entity : sensitiveEntities) {
             if (entity.getMetadata() != null && entity.getMetadata().containsKey("fieldPath")) {
@@ -86,20 +88,20 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 nonPathEntities.add(entity);
             }
         }
-        
+
         // 按字段路径处理
         for (SensitiveEntity entity : pathEntities) {
             String fieldPath = (String) entity.getMetadata().get("fieldPath");
             String mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
             dataMap = maskFieldInMap(dataMap, fieldPath, entity, mask);
         }
-        
+
         // 按值进行深度遍历处理
         for (SensitiveEntity entity : nonPathEntities) {
             String mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
             dataMap = deepMaskMap(dataMap, entity, mask);
         }
-        
+
         return dataMap;
     }
 
@@ -136,36 +138,40 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
     }
 
     // 按字段路径对Map中的字段进行掩码处理
-    private Map<String, Object> maskFieldInMap(Map<String, Object> map, String fieldPath, SensitiveEntity sensitiveEntity, String mask) {
+    private Map<String, Object> maskFieldInMap(Map<String, Object> map, String fieldPath,
+            SensitiveEntity sensitiveEntity, String mask) {
         if (map == null || fieldPath == null || fieldPath.isEmpty()) {
             return map;
         }
-        
+
         String[] parts = fieldPath.split("\\.");
         return processFieldPath(map, parts, 0, sensitiveEntity, mask);
     }
-    
+
     // 递归处理字段路径
-    private Map<String, Object> processFieldPath(Map<String, Object> map, String[] pathParts, int index, SensitiveEntity sensitiveEntity, String mask) {
+    private Map<String, Object> processFieldPath(Map<String, Object> map, String[] pathParts, int index,
+            SensitiveEntity sensitiveEntity, String mask) {
         if (index >= pathParts.length) {
             return map;
         }
-        
+
         String part = pathParts[index];
         // 检查是否为数组索引
         if (part.matches("\\[\\d+\\]") && map.containsValue(map)) {
             // 处理数组索引
             int arrayIndex = extractArrayIndex(part);
             for (Object value : map.values()) {
-                if (value instanceof List && ((List<?>)value).size() > arrayIndex) {
-                    Object listElement = ((List<?>)value).get(arrayIndex);
+                if (value instanceof List && ((List<?>) value).size() > arrayIndex) {
+                    Object listElement = ((List<?>) value).get(arrayIndex);
                     if (index == pathParts.length - 1 && listElement instanceof String) {
                         // 最后一部分且是字符串，进行脱敏
                         String strValue = (String) listElement;
-                        ((List<Object>)value).set(arrayIndex, strValue.replace(sensitiveEntity.getOriginalText(), mask));
+                        ((List<Object>) value).set(arrayIndex,
+                                strValue.replace(sensitiveEntity.getOriginalText(), mask));
                     } else if (listElement instanceof Map) {
                         // 嵌套对象，继续递归
-                        processFieldPath((Map<String, Object>) listElement, pathParts, index + 1, sensitiveEntity, mask);
+                        processFieldPath((Map<String, Object>) listElement, pathParts, index + 1, sensitiveEntity,
+                                mask);
                     }
                 }
             }
@@ -180,17 +186,17 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 processFieldPath((Map<String, Object>) value, pathParts, index + 1, sensitiveEntity, mask);
             } else if (value instanceof List) {
                 // 列表，需要递归处理每个元素
-                for (Object element : (List<?>)value) {
+                for (Object element : (List<?>) value) {
                     if (element instanceof Map) {
                         processFieldPath((Map<String, Object>) element, pathParts, index + 1, sensitiveEntity, mask);
                     }
                 }
             }
         }
-        
+
         return map;
     }
-    
+
     // 提取数组索引
     private int extractArrayIndex(String part) {
         // 例如 "[0]" -> 0
@@ -204,11 +210,11 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
     // 深度遍历Map进行掩码替换
     private Map<String, Object> deepMaskMap(Map<String, Object> map, SensitiveEntity entity, String mask) {
         Map<String, Object> result = new HashMap<>();
-        
+
         for (Map.Entry<String, Object> entry : map.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
-            
+
             if (value instanceof String) {
                 String strValue = (String) value;
                 // 检查是否包含敏感信息
@@ -228,14 +234,14 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 result.put(key, value);
             }
         }
-        
+
         return result;
     }
-    
+
     // 深度遍历List进行掩码替换
     private List<Object> deepMaskList(List<?> list, SensitiveEntity entity, String mask) {
         List<Object> result = new ArrayList<>();
-        
+
         for (Object item : list) {
             if (item instanceof String) {
                 String strItem = (String) item;
@@ -255,14 +261,14 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 result.add(item);
             }
         }
-        
+
         return result;
     }
-    
+
     // 处理多个实体的深度遍历方法
     private List<Object> deepMaskList(List<?> list, List<SensitiveEntity> entities) {
         List<Object> result = new ArrayList<>();
-        
+
         for (Object item : list) {
             if (item instanceof String) {
                 String strItem = (String) item;
@@ -290,10 +296,10 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 result.add(item);
             }
         }
-        
+
         return result;
     }
-    
+
     // 日志记录方法
     private void log(String message, Object... args) {
         log.info("[MaskDesensitizationStrategy] " + message, args);

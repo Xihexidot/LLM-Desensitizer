@@ -19,19 +19,19 @@ import java.util.Set;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ScenarioAnalysisResult {
-
+    // TODO: 情景少，也没有具体场景的测试用例
     /**
      * 情景类型枚举
      */
     public enum ScenarioType {
-        GENERAL_CHAT,        // 普通聊天
-        CUSTOMER_SERVICE,    // 客户服务
-        MEDICAL_CONSULTATION,// 医疗咨询
-        FINANCIAL_ADVICE,    // 财务建议
-        LEGAL_ADVICE,        // 法律咨询
-        HR_RECRUITMENT,      // 招聘
-        EDUCATION,           // 教育
-        TECHNICAL_SUPPORT,   // 技术支持
+        GENERAL_CHAT,           // 普通聊天 - 敏感度：高
+        CUSTOMER_SERVICE,       // 客服 - 敏感度：特别高（可能涉及账户信息）
+        MEDICAL_CONSULTATION,   // 医疗咨询 - 敏感度：高（涉及病历）
+        FINANCIAL_ADVICE,       // 财务建议 - 敏感度：特别高
+        LEGAL_ADVICE, // 法律咨询 - 敏感度：高
+        HR_RECRUITMENT,        // 招聘情景 
+        EDUCATION,             // 教育情景 
+        TECHNICAL_SUPPORT,     // 技术支持 - 敏感度：中（可能需要系统信息）
         CODE_DEVELOPMENT,    // 代码开发
         GOVERNMENT_SERVICE,  // 政务服务
         UNKNOWN              // 未知
