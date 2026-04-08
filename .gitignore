@@ -6,3 +6,5 @@ npm_cache/
 out/
 .vscode
 .mvn
+tmp
+logs
