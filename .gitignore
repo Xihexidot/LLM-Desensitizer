@@ -5,6 +5,6 @@ target/
 npm_cache/
 out/
 .vscode
-.mvn
 tmp
 logs
+node_modules/
