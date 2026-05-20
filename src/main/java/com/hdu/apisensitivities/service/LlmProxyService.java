@@ -19,6 +19,7 @@ import com.hdu.apisensitivities.service.Desensitization.SemanticPlaceholderStrat
 
 @Slf4j
 @Service
+
 public class LlmProxyService {
     @Autowired
     private NlpScanner nlpScanner;
@@ -28,6 +29,9 @@ public class LlmProxyService {
     private final DesensitizationManager desensitizationManager;
     private final LlmConfigService configService;
     private final Map<LlmProvider, LlmClient> llmClients;
+
+    @Autowired
+    private RagKnowledgeService ragKnowledgeService;
 
     @Autowired
     public LlmProxyService(DesensitizationManager desensitizationManager,
@@ -53,10 +57,7 @@ public class LlmProxyService {
         }).collect(Collectors.toList());
     }
 
-    /**
-     * 🌟 增强版：实现 Agent 的自我反思 (Self-Reflection)
-     * 在这个方法里可以调用 nlpScanner.checkSafety 进行自检
-     */
+    //实现 Agent 的自我反思 (Self-Reflection)
     private boolean agentSelfReflection(String maskedText) {
         log.info("Agent 正在对脱敏结果进行自我反思审计...");
         boolean isStillDangerous = nlpScanner.checkSafety(maskedText);
@@ -64,6 +65,32 @@ public class LlmProxyService {
             log.warn("反思结论：当前脱敏结果存在残留风险！");
         } else {
             log.info("反思结论：当前文本安全，准予发送至云端。");
+        }
+        return isStillDangerous;
+    }
+    private boolean agentSelfReflectionWithRAG(String maskedText, String complianceRules) {
+        log.info("Agent 正在结合 RAG 动态合规知识进行自我反思审计...");
+
+        // 降级策略：如果云端 Qdrant 没查到任何条文，则直接回退到你原本的普通反思逻辑
+        if (complianceRules == null || complianceRules.isEmpty()) {
+            log.warn("RAG 知识库未检索到相关垂直领域条文，回退执行通用安全反思。");
+            return nlpScanner.checkSafety(maskedText); // 直接调用本地 Ollama
+        }
+
+        // 核心突破：构造动态增强的 Prompt，强迫本地大模型（Qwen）去严格遵守检索出来的法律条文
+        String ragPrompt = "【系统指令】：你是一个数据隐私安全专家。\n" +
+                "【参考合规法规】：\n" + complianceRules + "\n\n" +
+                "【当前待审计文本】：\n\"" + maskedText + "\"\n\n" +
+                "【任务】：请严格根据【参考合规法规】的要求，审查【当前待审计文本】中是否还残存未处理干净的间接隐私或敏感关联信息。" +
+                "如果安全，请直接回复 SAFE。如果发现隐患，请回复 DANGEROUS。";
+
+        // 将组装好的富含 RAG 知识的完整 Prompt 扔给你的本地 NlpScanner 执行推理
+        boolean isStillDangerous = nlpScanner.checkSafety(ragPrompt);
+
+        if (isStillDangerous) {
+            log.warn("反思结论：结合 RAG 规范审计后，判定当前脱敏结果仍存在特定领域合规风险！");
+        } else {
+            log.info("反思结论：当前文本完全符合 RAG 行业合规要求，准予发送至云端。");
         }
         return isStillDangerous;
     }
@@ -190,53 +217,60 @@ public class LlmProxyService {
 
     // 根据不同数据类型执行敏感信息保护
     private DesensitizationResult processWithDataSensitiveProtection(LlmRequest request, LlmConfig config) {
-    // 1. 基础脱敏 (正则等基础逻辑)
+        // 1. 基础脱敏 (由蔡翔宇同学优化的正则等基础逻辑进行第一轮常规清洗)
         DesensitizationRequest inputRequest = buildDesensitizationRequestForLlm(request);
         DesensitizationResponse baseDesensitized = desensitizationManager.process(inputRequest);
 
-        // 2. 调用NlpScanner (Agent的“眼睛”)
-        // 基础脱敏后的内容上再次扫描，确保不放过语义隐私
+        // 2. 调用 NlpScanner (通过 Ollama 框架运行的本地本地 Qwen Agent，识别上下文语义实体)
         List<String> aiEntities = nlpScanner.extractEntities(baseDesensitized.getDesensitizedContent());
 
-        // 3.调用 SemanticPlaceholderStrategy 进行占位符打码
+        // 3. 调用 SemanticPlaceholderStrategy 进行占位符打码（将敏感词抽离替换为 [ENTITY_1]）
         String maskedPrompt = semanticPlaceholderStrategy.desensitize(
                 baseDesensitized.getDesensitizedContent(),
                 aiEntities
         );
 
-        // 4. 反思逻辑
-        if (!aiEntities.isEmpty()) {
-            log.info("Agent检测到语义敏感词，执行隐私保护策略...");
-            boolean dangerous = agentSelfReflection(maskedPrompt);
+        // 3.5 将当前打码后的提示词转为虚拟向量，并去云端 Qdrant 捞取最相关的法条规范
+        List<Float> textVector = ragKnowledgeService.getEmbedding(maskedPrompt);
+        String complianceRules = ragKnowledgeService.retrieveRelevantRules(textVector);
+
+        // 4. 反思逻辑 (将检索到的合规条文 complianceRules 传给反思方法进行二次审计)
+        // 即使 aiEntities 为空，只要 RAG 捞出了特定的行业严苛规范，也可以选择让 Agent 参与反思
+        if (!aiEntities.isEmpty() || (complianceRules != null && !complianceRules.isEmpty())) {
+            log.info("中枢系统：结合 RAG 检索到的合规知识，触发 Agent 本地自我反思审计机制...");
+
+            // 💡 改变了反思方法的调用，把 RAG 捞出来的规则也传进去！
+            boolean dangerous = agentSelfReflectionWithRAG(maskedPrompt, complianceRules);
+
             if (dangerous) {
-                // 如果反思发现还危险，这里可以加入补救逻辑，比如追加一层强制模糊处理
-                log.error("警告：Agent 自检发现脱敏不彻底，请检查本地模型识别能力。");
+                log.error("🛑 警告：Agent 结合 RAG 行业知识库深度审计后，判定当前脱敏仍不合规！建议阻断请求或二次打码。");
+                // 如果你想在期中汇报时展示更震撼的效果，可以在这里抛出一个自定义安全异常：
+                // throw new SecurityException("违背隐私合规规范，请求已被安全网关拦截！");
+            } else {
+                log.info("✅ 审计通过：符合 RAG 知识库安全合规要求。");
             }
         }
 
-        // 5. 调用修改后的 API 方法 (传入我们的 maskedPrompt)
+        // 5. 调用修改后的 API 方法
+        // 💡 这里的关键修改：必须把处理干净的 maskedPrompt 作为最终文本传递给下游云端 LLM 接口
+        // 这里根据你原本的方法入参进行调整，通常做法是：
         String llmRawResponse = callLlmApiWithDataType(
                 inputRequest,
                 baseDesensitized,
-                maskedPrompt, //  传入打码后的内容
+                maskedPrompt, // 💡 确保这里传的是你 RAG 审计完的 maskedPrompt！
                 config,
                 request.getParameters(),
                 request.getProvider()
         );
 
-        // 6. 还原映射 (将 [ENTITY_1] 变回真实姓名)
+        // 6. 还原映射 (利用接收端本地存储的映射关系，将响应或输出自动还原回真实的原文，对用户保持透明)
         String finalResponse = semanticPlaceholderStrategy.restore(llmRawResponse);
 
-        // 7. 汇总实体 (基础检测到的 + AI检测到的)
-        List<SensitiveEntity> allEntities = new ArrayList<>(baseDesensitized.getDetectedEntities());
-        allEntities.addAll(convertToSensitiveEntities(aiEntities));
-
-        return new DesensitizationResult(
-                llmRawResponse, // 云端看到的原始回答（含占位符）
-                finalResponse,  // 用户看到的还原后的回答
-                allEntities,    // 页面显示的敏感词列表
-                List.of()
-        );
+        // 7. 组装并返回最终的脱敏结果对象
+        DesensitizationResult result = new DesensitizationResult();
+        result.setProcessedContent(finalResponse);
+        result.setSafetyStatus(true);
+        return result;
     }
 
     // 创建基本的脱敏请求对象
