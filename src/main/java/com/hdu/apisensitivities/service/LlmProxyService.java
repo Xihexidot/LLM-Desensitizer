@@ -263,14 +263,17 @@ public class LlmProxyService {
                 request.getProvider()
         );
 
-        // 6. 还原映射 (利用接收端本地存储的映射关系，将响应或输出自动还原回真实的原文，对用户保持透明)
+        // 6. 还原映射 (利用接收端本地存储的映射关系，将响应或输出自动还原回真实的原文)
         String finalResponse = semanticPlaceholderStrategy.restore(llmRawResponse);
 
-        // 7. 组装并返回最终的脱敏结果对象
-        DesensitizationResult result = new DesensitizationResult();
-        result.setProcessedContent(finalResponse);
-        result.setSafetyStatus(true);
-        return result;
+        // 7
+        // 参数依次为：(原始Prompt, 还原后的最终回复, 基础脱敏实体列表, 发现的AI实体列表)
+        return new DesensitizationResult(
+                request.getPrompt(),
+                finalResponse,
+                baseDesensitized.getDetectedEntities(),
+                null // 如果不需要传递，暂时传 null，或者传入你包装好的其他实体
+        );
     }
 
     // 创建基本的脱敏请求对象
