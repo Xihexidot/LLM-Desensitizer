@@ -17,7 +17,8 @@ public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
     }
 
     @Override
-    public Map<String, Object> desensitizeStructuredData(Map<String, Object> structuredData, List<SensitiveEntity> sensitiveEntities) {
+    public Map<String, Object> desensitizeStructuredData(Map<String, Object> structuredData,
+            List<SensitiveEntity> sensitiveEntities) {
         return Map.of();
     }
 
@@ -46,6 +47,7 @@ public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
         // 这个名字通常用于在策略工厂中标识自己
         return "SEMANTIC_PLACEHOLDER";
     }
+
     public String desensitize(String text, Object... args) {
         if (text == null || args.length == 0 || !(args[0] instanceof List)) {
             return text;

@@ -11,17 +11,23 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
-import java.io.*;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @SpringBootTest
 public class DesensitizationBenchmarkTest {
+
+    private static final String LOG_DIR = "./logs";
+    private static final String TEST_DATASET = "my_pii_test_set.json";
+    private static final String TEXT_DATA_TYPE = "TEXT";
+    private static final boolean AUTO_SCENARIO_DETECTION = false;
+    private static final boolean STRICT_MODE = false;
+    private static final double BENCHMARK_CONFIDENCE_THRESHOLD = 0.0;
 
     @Autowired
     private DesensitizationManager desensitizationManager;
@@ -29,35 +35,17 @@ public class DesensitizationBenchmarkTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private static final Map<String, String> TYPE_MAP = Map.of(
-            "person", "CHINESE_NAME",
-            "phone", "MOBILE_PHONE",
-            "address", "ADDRESS",
-            "email", "EMAIL",
-            "bank_card", "BANK_CARD",
-            "license_plate", "LICENSE_PLATE",
-            "id_number", "ID_CARD");
-
     @Test
     public void runBenchmark() throws Exception {
         // 1. 创建本次测试的日志文件
         String timestamp = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss"));
         String logFileName = String.format("benchmark_result_%s.log", timestamp);
-        Path logPath = Paths.get("./logs", logFileName);
+        Path logPath = createLogPath(logFileName);
 
+        // 2. 读取测试数据
+        List<TestDataDTO> testCases = loadTestCases();
 
-        // 确保 logs 目录存在
-        Files.createDirectories(logPath.getParent());
-
-        // 2. 准备输出流（同时输出到控制台和文件）
-        List<String> allLogs = new ArrayList<>();
-
-        // 3. 读取测试数据
-        InputStream is = getClass().getClassLoader().getResourceAsStream("my_pii_test_set.json");
-        List<TestDataDTO> testCases = objectMapper.readValue(is, new TypeReference<>() {
-        });
-
-        // 4. 统计变量
+        // 3. 统计变量
         int totalExpected = 0;
         int totalFound = 0;
         int failedCases = 0;
@@ -72,24 +60,9 @@ public class DesensitizationBenchmarkTest {
             result.setExpectedCount(testCase.getExpected_entities().size());
 
             // 执行识别
-            DesensitizationRequest request = DesensitizationRequest.builder()
-                    .content(testCase.getContent())
-                    .dataType("TEXT")
-                    .language(testCase.getLanguage())
-                    // TODO: 这里情景感知关掉了
-                    .autoScenarioDetection(false)
-                    .strictMode(false) // 关闭严格模式
-                    .confidenceThreshold(0.0) // 设置低置信度阈值，避免过滤
-                    .blacklist(null) // 不设置黑名单
-                    .whitelist(null) // 不设置白名单
-                    .build();
-
+            DesensitizationRequest request = createBenchmarkRequest(testCase);
             DesensitizationResponse response = desensitizationManager.process(request);
-            List<SensitiveEntity> actualEntities = response.getDetectedEntities();
-
-            if (actualEntities == null) {
-                actualEntities = Collections.emptyList();
-            }
+            List<SensitiveEntity> actualEntities = getActualEntities(response);
 
             // 匹配实体
             List<String> unmatchedEntities = new ArrayList<>();
@@ -121,13 +94,7 @@ public class DesensitizationBenchmarkTest {
 
             if (!result.isSuccess()) {
                 failedCases++;
-                failLog.append("用例ID: ").append(result.getCaseId()).append("\n");
-                failLog.append("  预期实体数: ").append(result.getExpectedCount()).append("\n");
-                failLog.append("  匹配实体数: ").append(result.getMatchedCount()).append("\n");
-                failLog.append("  未识别实体: ").append(String.join(", ", result.getUnmatchedEntities())).append("\n");
-                // 如果你还想看原始文本，可以从 testCase 里取：
-                failLog.append(" 原始文本: ").append(testCase.getContent()).append("\n");
-                failLog.append("\n");
+                appendFailureLog(failLog, result, testCase);
             }
 
             caseResults.add(result);
@@ -179,10 +146,10 @@ public class DesensitizationBenchmarkTest {
         // 8. 写入文件
         Files.write(logPath, report.toString().getBytes(StandardCharsets.UTF_8),
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
-                
+
         // 在所有用例处理完之后，写入文件：
         if (failLog.length() > 0) {
-            Path failLogPath = Paths.get("./logs", "failed_cases_" + timestamp + ".log");
+            Path failLogPath = Paths.get(LOG_DIR, "failed_cases_" + timestamp + ".log");
             Files.write(failLogPath, failLog.toString().getBytes(StandardCharsets.UTF_8));
             System.out.println("失败日志已保存到: " + failLogPath.toAbsolutePath());
         }
@@ -190,13 +157,59 @@ public class DesensitizationBenchmarkTest {
         // 9. 同时保存一份 JSON 格式的详细结果（便于后续分析）
         String jsonResult = objectMapper.writerWithDefaultPrettyPrinter()
                 .writeValueAsString(caseResults);
-        Path jsonPath = Paths.get("./logs", String.format("benchmark_detail_%s.json", timestamp));
+        Path jsonPath = Paths.get(LOG_DIR, String.format("benchmark_detail_%s.json", timestamp));
         Files.write(jsonPath, jsonResult.getBytes(StandardCharsets.UTF_8),
                 StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
 
         System.out.println("\n✅ 测试完成！");
         System.out.println("📄 详细报告: " + logPath.toAbsolutePath());
         System.out.println("📊 JSON数据: " + jsonPath.toAbsolutePath());
+    }
+
+    private Path createLogPath(String logFileName) throws Exception {
+        Path logPath = Paths.get(LOG_DIR, logFileName);
+        Files.createDirectories(logPath.getParent());
+        return logPath;
+    }
+
+    private List<TestDataDTO> loadTestCases() throws Exception {
+        try (InputStream inputStream = Objects.requireNonNull(
+                getClass().getClassLoader().getResourceAsStream(TEST_DATASET),
+                "找不到测试数据文件: " + TEST_DATASET)) {
+            return objectMapper.readValue(inputStream, new TypeReference<>() {
+            });
+        }
+    }
+
+    private DesensitizationRequest createBenchmarkRequest(TestDataDTO testCase) {
+        return DesensitizationRequest.builder()
+                .content(testCase.getContent())
+                .dataType(TEXT_DATA_TYPE)
+                .language(testCase.getLanguage())
+                // 基准测试阶段先固定关闭情景感知，避免干扰规则匹配评估。
+                .autoScenarioDetection(AUTO_SCENARIO_DETECTION)
+                .strictMode(STRICT_MODE)
+                .confidenceThreshold(BENCHMARK_CONFIDENCE_THRESHOLD)
+                .blacklist(null)
+                .whitelist(null)
+                .build();
+    }
+
+    private List<SensitiveEntity> getActualEntities(DesensitizationResponse response) {
+        List<SensitiveEntity> actualEntities = response.getDetectedEntities();
+        if (actualEntities == null) {
+            return Collections.emptyList();
+        }
+        return actualEntities;
+    }
+
+    private void appendFailureLog(StringBuilder failLog, TestCaseResult result, TestDataDTO testCase) {
+        failLog.append("用例ID: ").append(result.getCaseId()).append("\n");
+        failLog.append("  预期实体数: ").append(result.getExpectedCount()).append("\n");
+        failLog.append("  匹配实体数: ").append(result.getMatchedCount()).append("\n");
+        failLog.append("  未识别实体: ").append(String.join(", ", result.getUnmatchedEntities())).append("\n");
+        failLog.append(" 原始文本: ").append(testCase.getContent()).append("\n");
+        failLog.append("\n");
     }
 
     // 辅助方法：重复字符串

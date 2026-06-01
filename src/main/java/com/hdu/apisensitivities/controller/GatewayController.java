@@ -1,8 +1,4 @@
 package com.hdu.apisensitivities.controller;
-import org.springframework.http.MediaType;
-import org.springframework.http.codec.ServerSentEvent;
-import reactor.core.publisher.Flux;
-import reactor.core.publisher.Sinks;
 
 import com.hdu.apisensitivities.entity.*;
 import com.hdu.apisensitivities.service.LlmProxyService;
@@ -81,27 +77,6 @@ public class GatewayController {
     @GetMapping("/health")
     public ResponseEntity<String> health() {
         return ResponseEntity.ok("Gateway is running");
-    }
 
-    /**
-     * 从OpenAI格式的请求体中提取用户问题
-     */
-    private String extractUserQuestion(Map<String, Object> request) {
-        // 兼容 OpenAI 格式: {"messages": [{"role": "user", "content": "你好"}]}
-        if (request.containsKey("messages")) {
-            var messages = (java.util.List<Map<String, String>>) request.get("messages");
-            if (messages != null && !messages.isEmpty()) {
-                return messages.get(messages.size() - 1).get("content");
-            }
-        }
-        // 兼容简单格式: {"question": "你好"} 或 {"prompt": "你好"}
-        if (request.containsKey("question")) {
-            return request.get("question").toString();
-        }
-        if (request.containsKey("prompt")) {
-            return request.get("prompt").toString();
-        }
-        // 兜底：把整个请求体转成字符串
-        return request.toString();
     }
 }

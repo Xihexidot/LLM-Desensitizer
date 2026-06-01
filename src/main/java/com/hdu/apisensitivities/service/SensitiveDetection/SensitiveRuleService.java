@@ -17,13 +17,13 @@ import java.util.regex.PatternSyntaxException;
 @Service
 public class SensitiveRuleService {
     private final SensitiveRuleMapper sensitiveRuleMapper;
-    private final SensitiveDetectionService sensitiveDetectionService;
+    private final CustomPatternDetectionService customPatternDetectionService;
 
     @Autowired
     public SensitiveRuleService(SensitiveRuleMapper sensitiveRuleMapper,
-                                SensitiveDetectionService sensitiveDetectionService) {
+                                CustomPatternDetectionService customPatternDetectionService) {
         this.sensitiveRuleMapper = sensitiveRuleMapper;
-        this.sensitiveDetectionService = sensitiveDetectionService;
+        this.customPatternDetectionService = customPatternDetectionService;
     }
 
     /**
@@ -36,7 +36,7 @@ public class SensitiveRuleService {
         int count = 0;
         for (SensitiveRule rule : rules) {
             try {
-                sensitiveDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
+                customPatternDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
                 count++;
             } catch (Exception e) {
                 log.error("加载规则 {} 失败: {}", rule.getPatternName(), e.getMessage());
@@ -70,7 +70,7 @@ public class SensitiveRuleService {
         sensitiveRuleMapper.insert(rule);
 
         if (rule.getIsEnabled()) {
-            sensitiveDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
+            customPatternDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
         }
     }
 
@@ -95,16 +95,16 @@ public class SensitiveRuleService {
         // 刷新内存中的规则
         SensitiveRule updated = sensitiveRuleMapper.selectByPatternName(rule.getPatternName());
         if (updated.getIsEnabled()) {
-            sensitiveDetectionService.addCustomPattern(updated.getPatternName(), updated.getRegex());
+            customPatternDetectionService.addCustomPattern(updated.getPatternName(), updated.getRegex());
         } else {
-            sensitiveDetectionService.removeCustomPattern(updated.getPatternName());
+            customPatternDetectionService.removeCustomPattern(updated.getPatternName());
         }
     }
 
     @Transactional
     public void deleteRule(String patternName) {
         sensitiveRuleMapper.deleteByPatternName(patternName);
-        sensitiveDetectionService.removeCustomPattern(patternName);
+        customPatternDetectionService.removeCustomPattern(patternName);
     }
 
     @Transactional
@@ -117,9 +117,9 @@ public class SensitiveRuleService {
         sensitiveRuleMapper.updateStatus(patternName, enabled);
 
         if (enabled) {
-            sensitiveDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
+            customPatternDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
         } else {
-            sensitiveDetectionService.removeCustomPattern(patternName);
+            customPatternDetectionService.removeCustomPattern(patternName);
         }
     }
 }

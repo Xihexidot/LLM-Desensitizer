@@ -14,7 +14,7 @@ import java.util.Set;
 public class StructuredDataDetector {
 
     public void detectInStructuredData(Object data, String fieldPath, List<SensitiveEntity> entities, String language,
-            Set<String> includeTypes, SensitiveDetectionService detector) {
+            Set<String> includeTypes, TextSensitiveDetectionService detector) {
         if (data == null) {
             return;
         }

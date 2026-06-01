@@ -1,13 +1,9 @@
 package com.hdu.apisensitivities.service.SensitiveDetection;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import com.hdu.apisensitivities.service.DataParser.DataParserManager;
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.service.ScenarioPerception.ScenarioAnalysisResult;
-import com.hdu.apisensitivities.utils.NlpEntityDetector;
 import com.hdu.apisensitivities.utils.PatternRegistry;
-import com.hdu.apisensitivities.service.SensitiveDetection.RegexPatternDetector;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Primary;
@@ -18,7 +14,6 @@ import java.io.IOException;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import com.hdu.apisensitivities.service.SensitiveDetection.EntityMerger;
 
 /**
  * 基于正则表达式、NLP 和自定义模式的敏感信息检测服务实现。
@@ -48,8 +43,6 @@ import com.hdu.apisensitivities.service.SensitiveDetection.EntityMerger;
 @Service
 @Primary
 public class RegexDetectionService implements SensitiveDetectionService {
-
-    // private final DataParserManager dataParserManager;
     @Autowired
     private CustomPatternManager customPatternManager;
     @Autowired
@@ -62,14 +55,6 @@ public class RegexDetectionService implements SensitiveDetectionService {
     private BinaryDataDetector binaryDataDetector;
     @Autowired
     private EntityMerger entityMerger;
-    
-    // private final PythonNerClient pythonNerClient; // 新增
-
-    // @Autowired
-    // public RegexDetectionService(DataParserManager dataParserManager, PythonNerClient pythonNerClient) {
-    //     this.dataParserManager = dataParserManager;
-    //     this.pythonNerClient = pythonNerClient;
-    // }
 
     // ======================== 文本检测核心方法 ========================
 
@@ -130,52 +115,43 @@ public class RegexDetectionService implements SensitiveDetectionService {
 
         List<SensitiveEntity> entities = new ArrayList<>();
 
-        // ========== 预定义正则模式 ==========
-        // 返回所有预定义的正则规则
-        Map<SensitiveType, Pattern> patterns = PatternRegistry.getAllPatterns();
-
-        // 提取候选实体
-        for (Map.Entry<SensitiveType, Pattern> entry : patterns.entrySet()) {
-            // 如果指定了检测类型，只检测指定的类型
-            if (includeTypes == null || includeTypes.contains(entry.getKey().name())) {
-                entities.addAll(
-                        regexPatternDetector.detectWithPattern(text, entry.getKey(), entry.getValue(), context));
-            }
-        }
-
-        // ========== NLP实体检测 ==========
-        // 使用 HanLP 的封装进行NLP实体检测
-        List<SensitiveEntity> nlpEntities = nlpDetectionService.detect(text);
-        // 过滤NLP检测结果，根据includeTypes只检测某些敏感类型
-        if (includeTypes == null) {
-            entities.addAll(nlpEntities);
-        } else {
-            for (SensitiveEntity entity : nlpEntities) {
-                if (includeTypes.contains(entity.getType().name())) {
-                    entities.add(entity);
-                }
-            }
-        }
-
-        // // ========== 新 Python NER 检测 ==========
-        // List<SensitiveEntity> pythonNerEntities = pythonNerClient.detect(text);
-        // if (includeTypes == null) {
-        //     entities.addAll(pythonNerEntities);
-        // } else {
-        //     pythonNerEntities.stream()
-        //             .filter(e -> includeTypes.contains(e.getType().name()))
-        //             .forEach(entities::add);
-        // }
-
-        // 检测自定义模式的敏感信息
-        for (Map.Entry<String, Pattern> entry : customPatternManager.getAllPatterns().entrySet()) {
-            // 如果includeTypes不为空且包含CUSTOM类型，则检测自定义模式
-            if (includeTypes == null || includeTypes.contains(SensitiveType.CUSTOM.name())) {
-                entities.addAll(regexPatternDetector.detectCustomPattern(text, entry.getKey(), entry.getValue()));
-            }
-        }
+        collectPredefinedPatternEntities(text, includeTypes, context, entities);
+        collectNlpEntities(text, includeTypes, entities);
+        collectCustomPatternEntities(text, includeTypes, entities);
 
         return entityMerger.mergeEntities(entities);
+    }
+
+    private void collectPredefinedPatternEntities(String text, Set<String> includeTypes,
+            ScenarioAnalysisResult context, List<SensitiveEntity> entities) {
+        for (Map.Entry<SensitiveType, Pattern> entry : PatternRegistry.getAllPatterns().entrySet()) {
+            if (shouldDetectType(includeTypes, entry.getKey().name())) {
+                entities.addAll(regexPatternDetector.detectWithPattern(text, entry.getKey(), entry.getValue(), context));
+            }
+        }
+    }
+
+    private void collectNlpEntities(String text, Set<String> includeTypes, List<SensitiveEntity> entities) {
+        List<SensitiveEntity> nlpEntities = nlpDetectionService.detect(text);
+        for (SensitiveEntity entity : nlpEntities) {
+            if (shouldDetectType(includeTypes, entity.getType().name())) {
+                entities.add(entity);
+            }
+        }
+    }
+
+    private void collectCustomPatternEntities(String text, Set<String> includeTypes, List<SensitiveEntity> entities) {
+        if (!shouldDetectType(includeTypes, SensitiveType.CUSTOM.name())) {
+            return;
+        }
+
+        for (Map.Entry<String, Pattern> entry : customPatternManager.getAllPatterns().entrySet()) {
+            entities.addAll(regexPatternDetector.detectCustomPattern(text, entry.getKey(), entry.getValue()));
+        }
+    }
+
+    private boolean shouldDetectType(Set<String> includeTypes, String typeName) {
+        return includeTypes == null || includeTypes.contains(typeName);
     }
 
     // ======================== 结构化数据检测 ========================
@@ -378,17 +354,14 @@ public class RegexDetectionService implements SensitiveDetectionService {
             return Collections.emptyList();
         }
 
-        if (dataType == null) {
-            dataType = "TEXT";
-        }
+        String normalizedDataType = dataType == null ? "TEXT" : dataType.toUpperCase();
 
-        switch (dataType.toUpperCase()) {
+        switch (normalizedDataType) {
             case "JSON":
             case "XML":
                 if (data instanceof Map) {
                     return detectSensitiveInfoInStructuredData((Map<String, Object>) data, language, includeTypes);
                 }
-                // 如果不是Map，尝试转换为字符串进行检测
                 return detectSensitiveInfo(data.toString(), language, includeTypes);
             case "IMAGE":
             case "AUDIO":
@@ -396,22 +369,28 @@ public class RegexDetectionService implements SensitiveDetectionService {
             case "DOC":
             case "DOCX":
             case "EXCEL":
-                if (data instanceof byte[]) {
-                    return detectSensitiveInfoInBinary((byte[]) data, dataType, language, includeTypes);
-                } else if (data instanceof MultipartFile) {
-                    try {
-                        return detectSensitiveInfoInBinary(((MultipartFile) data).getBytes(), dataType, language,
-                                includeTypes);
-                    } catch (IOException e) {
-                        log.error("无法从MultipartFile获取字节数据: {}", e.getMessage(), e);
-                        return Collections.emptyList();
-                    }
-                }
-                return Collections.emptyList();
+                return detectBinaryDataByType(data, normalizedDataType, language, includeTypes);
             default:
-                // 默认作为文本处理
                 return detectSensitiveInfo(data.toString(), language, includeTypes);
         }
+    }
+
+    private List<SensitiveEntity> detectBinaryDataByType(Object data, String dataType, String language,
+            Set<String> includeTypes) {
+        if (data instanceof byte[]) {
+            return detectSensitiveInfoInBinary((byte[]) data, dataType, language, includeTypes);
+        }
+
+        if (data instanceof MultipartFile) {
+            try {
+                return detectSensitiveInfoInBinary(((MultipartFile) data).getBytes(), dataType, language,
+                        includeTypes);
+            } catch (IOException e) {
+                log.error("无法从MultipartFile获取字节数据: {}", e.getMessage(), e);
+            }
+        }
+
+        return Collections.emptyList();
     }
 
     /**
@@ -423,37 +402,7 @@ public class RegexDetectionService implements SensitiveDetectionService {
      */
     @Override
     public boolean validateAccuracy(String testDataPath) {
-        // 实现准确率验证逻辑
-        // 这里可以读取测试数据集进行验证
         log.info("开始验证敏感信息检测准确率...");
-        // 模拟验证结果
         return true;
     }
-    // 私有辅助方法已迁移至 RegexPatternDetector / ValidationUtils
-
-    /**
-     * 递归遍历结构化数据，提取其中的字符串值并检测敏感信息。
-     *
-     * @param data         当前节点数据
-     * @param fieldPath    字段路径（如 "user.phone[0]"）
-     * @param entities     用于收集敏感实体的列表
-     * @param language     语言类型
-     * @param includeTypes 需要检测的敏感类型集合
-     */
-    // 结构化数据遍历逻辑已移至 StructuredDataDetector
-
-    /**
-     * 合并位置重叠或相邻的敏感实体。
-     * <p>
-     * 规则：
-     * <ul>
-     * <li>若两个实体类型相同且重叠，则合并为一个，起始取最小，结束取最大，置信度取较高者；</li>
-     * <li>若类型不同且重叠，则丢弃后者（当前实现简单处理，后续可优化为按优先级保留）。</li>
-     * </ul>
-     * </p>
-     *
-     * @param entities 待合并的实体列表
-     * @return 合并后的实体列表
-     */
-    // 合并逻辑已迁移到 EntityMerger
 }

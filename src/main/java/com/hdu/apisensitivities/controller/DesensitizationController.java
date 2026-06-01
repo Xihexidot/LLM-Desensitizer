@@ -4,7 +4,6 @@ import com.hdu.apisensitivities.service.DataParser.DataParserManager;
 import com.hdu.apisensitivities.entity.DesensitizationRequest;
 import com.hdu.apisensitivities.entity.DesensitizationResponse;
 import com.hdu.apisensitivities.service.DesensitizationManager;
-import com.hdu.apisensitivities.service.SensitiveDetection.SensitiveDetectionService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,7 +27,6 @@ public class DesensitizationController {
 
     @Autowired
     public DesensitizationController(DesensitizationManager desensitizationManager,
-                                     SensitiveDetectionService detectionService,
                                      DataParserManager dataParserManager) {
         this.desensitizationManager = desensitizationManager;
         this.dataParserManager = dataParserManager;
