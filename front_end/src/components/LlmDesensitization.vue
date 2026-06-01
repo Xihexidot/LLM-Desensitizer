@@ -1,14 +1,16 @@
 <script setup>
   import { ref, reactive, onMounted, watch, onUnmounted } from "vue";
-  import MarkdownIt from "markdown-it";
-  import hljs from "highlight.js";
-  import "highlight.js/styles/github-dark.css"; // 引入代码高亮样式
-  import html2canvas from "html2canvas";
-  import jsPDF from "jspdf";
   import { API_BASE_URL } from "../config";
   import LlmProcessingProgress from "./LlmProcessingProgress.vue";
   import LlmDetectionResults from "./LlmDetectionResults.vue";
   import LlmFeatureCards from "./LlmFeatureCards.vue";
+  import LlmResultsPanel from "./LlmResultsPanel.vue";
+  import {
+    buildMarkdownReport,
+    exportMarkdownReport,
+    exportElementToPdf,
+    copyElementScreenshotOrDownload,
+  } from "../utils/llmReportExport";
 
   const emit = defineEmits(["conversation-completed"]);
   const props = defineProps({
@@ -17,34 +19,6 @@
       default: () => ({ autoScenario: true, useLlm: false }),
     },
   });
-
-  // Markdown 渲染器初始化
-  const md = new MarkdownIt({
-    html: false, // 禁用 HTML 标签以防 XSS
-    linkify: true, // 自动识别链接
-    typographer: true, // 优化排版
-    highlight: function (str, lang) {
-      if (lang && hljs.getLanguage(lang)) {
-        try {
-          return (
-            '<pre class="hljs"><code>' +
-            hljs.highlight(str, { language: lang, ignoreIllegals: true })
-              .value +
-            "</code></pre>"
-          );
-        } catch (__) {}
-      }
-      return (
-        '<pre class="hljs"><code>' + md.utils.escapeHtml(str) + "</code></pre>"
-      );
-    },
-  });
-
-  // 渲染 Markdown
-  const renderMarkdown = (text) => {
-    if (!text) return "";
-    return md.render(text);
-  };
 
   // LLM提供商选择
   const llmProvider = ref("DEEPSEEK");
@@ -291,6 +265,7 @@
   const detectedEntities = ref([]);
   const processingStep = ref("");
   const collapsedDetection = ref(false);
+  const resultsPanelRef = ref(null);
 
   const currentPercent = ref(0);
   let rafId = null;
@@ -351,6 +326,10 @@
 
   function createEmptyAttachmentInfo() {
     return { originalLength: 0, sentLength: 0, truncated: false };
+  }
+
+  function getResultsPanelElement() {
+    return resultsPanelRef.value?.getRootElement?.() ?? null;
   }
 
   function buildAttachmentInfo(attachment) {
@@ -525,47 +504,25 @@
   // 导出 Markdown
   function exportMarkdown() {
     if (!results.value) return;
-    const date = new Date().toLocaleString();
-    const content = `# 脱敏处理报告
-生成时间: ${date}
-LLM提供商: ${results.value.llmProvider}
-
-## 1. 原始提示词
-${results.value.originalPrompt}
-
-## 2. 脱敏后提示词
-${results.value.desensitizedPrompt}
-
-## 3. LLM 响应
-${getLlmText()}
-
-## 4. 敏感信息检测统计
-共拦截: ${detectedEntities.value.length} 个敏感实体
-`;
-    const blob = new Blob([content], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `desensitization-report-${Date.now()}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const content = buildMarkdownReport(
+      results.value,
+      getLlmText(),
+      detectedEntities.value.length,
+    );
+    exportMarkdownReport(content, `desensitization-report-${Date.now()}.md`);
   }
 
   // 导出 PDF (截图方式，保证样式)
   async function exportPDF() {
-    const element = document.querySelector(".results-section");
+    const element = getResultsPanelElement();
     if (!element) return;
 
     loading.value = true;
     try {
-      const canvas = await html2canvas(element, { scale: 2 });
-      const imgData = canvas.toDataURL("image/png");
-      const pdf = new jsPDF("p", "mm", "a4");
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.addImage(imgData, "PNG", 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`desensitization-report-${Date.now()}.pdf`);
+      await exportElementToPdf(
+        element,
+        `desensitization-report-${Date.now()}.pdf`,
+      );
     } catch (err) {
       console.error("PDF Export failed", err);
       error.value = "PDF导出失败: " + err.message;
@@ -576,27 +533,18 @@ ${getLlmText()}
 
   // 分享截图
   async function shareScreenshot() {
-    const element = document.querySelector(".results-section");
+    const element = getResultsPanelElement();
     if (!element) return;
 
     loading.value = true;
     try {
-      const canvas = await html2canvas(element, { scale: 2 });
-      canvas.toBlob((blob) => {
-        const item = new ClipboardItem({ "image/png": blob });
-        navigator.clipboard
-          .write([item])
-          .then(() => {
-            alert("截图已复制到剪贴板！");
-          })
-          .catch(() => {
-            // Fallback download if clipboard write fails
-            const link = document.createElement("a");
-            link.download = `screenshot-${Date.now()}.png`;
-            link.href = canvas.toDataURL();
-            link.click();
-          });
-      });
+      const action = await copyElementScreenshotOrDownload(
+        element,
+        `screenshot-${Date.now()}.png`,
+      );
+      if (action === "copied") {
+        alert("截图已复制到剪贴板！");
+      }
     } catch (err) {
       console.error("Screenshot failed", err);
       error.value = "截图失败: " + err.message;
@@ -852,136 +800,22 @@ ${getLlmText()}
       @toggle-collapse="collapsedDetection = !collapsedDetection"
     />
 
-    <!-- 结果展示区域 -->
-    <div
+    <LlmResultsPanel
       v-if="results"
-      class="results-section"
-    >
-      <div class="results-header">
-        <h3>📊 处理结果</h3>
-        <div class="export-actions">
-          <button
-            @click="exportMarkdown"
-            class="btn btn-small btn-secondary"
-            title="导出 Markdown"
-          >
-            ⬇️ MD
-          </button>
-          <button
-            @click="exportPDF"
-            class="btn btn-small btn-secondary"
-            title="导出 PDF"
-          >
-            ⬇️ PDF
-          </button>
-          <button
-            @click="shareScreenshot"
-            class="btn btn-small btn-secondary"
-            title="生成长截图"
-          >
-            📸 截图
-          </button>
-        </div>
-      </div>
-
-      <!-- 对比区域 -->
-      <div class="comparison-section">
-        <!-- 原始提示词 -->
-        <div class="comparison-panel original">
-          <div class="panel-header">
-            <h4>原始提示词</h4>
-            <div class="panel-actions">
-              <button
-                @click="copyToClipboard(results.originalPrompt, '原始提示词')"
-                class="copy-btn"
-                title="复制到剪贴板"
-              >
-                📋 复制
-              </button>
-            </div>
-          </div>
-          <div
-            class="content-display"
-            v-html="getHighlightedOriginal()"
-          ></div>
-        </div>
-
-        <!-- 脱敏后提示词 -->
-        <div class="comparison-panel desensitized">
-          <div class="panel-header">
-            <h4>脱敏后提示词</h4>
-            <div class="panel-actions">
-              <button
-                @click="
-                  copyToClipboard(results.desensitizedPrompt, '脱敏后提示词')
-                "
-                class="copy-btn"
-                title="复制到剪贴板"
-              >
-                📋 复制
-              </button>
-            </div>
-          </div>
-          <pre class="content-display">{{
-            formatText(results.desensitizedPrompt)
-          }}</pre>
-        </div>
-      </div>
-
-      <!-- LLM响应 -->
-      <div class="llm-response-panel">
-        <div class="panel-header">
-          <h4>
-            {{ getCurrentProvider().icon }} {{ results.llmProvider }} 响应
-          </h4>
-          <div class="panel-actions">
-            <button
-              @click="copyToClipboard(getLlmText(), 'LLM响应')"
-              class="copy-btn"
-              title="复制到剪贴板"
-            >
-              📋 复制
-            </button>
-          </div>
-        </div>
-        <div class="llm-response-content">
-          <template v-if="results.llmResponse && results.llmResponse.success">
-            <div
-              v-html="renderMarkdown(displayedLlmText)"
-              class="markdown-body"
-            ></div>
-            <span
-              v-if="isTyping"
-              class="cursor-blink"
-              >|</span
-            >
-          </template>
-          <template v-else>
-            <div class="error-message">❌ {{ getLlmText() }}</div>
-          </template>
-        </div>
-
-        <!-- 性能信息 -->
-        <div class="performance-info">
-          <small>
-            脱敏耗时: {{ results.processingTime.desensitization }}ms |
-            LLM响应耗时: {{ results.processingTime.llm }}ms | 总计耗时:
-            {{
-              results.processingTime.desensitization +
-              results.processingTime.llm
-            }}ms
-          </small>
-          <small>
-            附件原长度: {{ results.attachmentInfo?.originalLength || 0 }} |
-            发送长度: {{ results.attachmentInfo?.sentLength || 0 }} | 是否截断:
-            {{ results.attachmentInfo?.truncated ? "是" : "否" }}
-          </small>
-          <small>
-            提示词总长度: {{ (results.originalPrompt || "").length }}
-          </small>
-        </div>
-      </div>
-    </div>
+      ref="resultsPanelRef"
+      :results="results"
+      :displayed-llm-text="displayedLlmText"
+      :is-typing="isTyping"
+      :highlighted-original-html="getHighlightedOriginal()"
+      :desensitized-prompt="formatText(results.desensitizedPrompt)"
+      :llm-text="getLlmText()"
+      :provider-icon="getCurrentProvider().icon"
+      :loading="loading"
+      @copy="copyToClipboard"
+      @export-markdown="exportMarkdown"
+      @export-pdf="exportPDF"
+      @share-screenshot="shareScreenshot"
+    />
 
     <!-- 特性说明 -->
     <LlmFeatureCards />
