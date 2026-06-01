@@ -2,6 +2,7 @@ package com.hdu.apisensitivities.service.Desensitization;
 
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -160,7 +161,10 @@ public class PartialDesensitizationStrategy implements DesensitizationStrategy {
             String fieldName = pathParts[pathParts.length - 1];
             Object value = ((Map<?, ?>) current).get(fieldName);
             if (value instanceof String) {
-                ((Map<String, Object>) current).put(fieldName, applyPartialMask((String) value, type));
+                Map<String, Object> currentMap = CollectionTypeUtils.asStringObjectMap(current);
+                if (currentMap != null) {
+                    currentMap.put(fieldName, applyPartialMask((String) value, type));
+                }
             }
         }
     }
@@ -183,7 +187,8 @@ public class PartialDesensitizationStrategy implements DesensitizationStrategy {
                 }
             } else if (value instanceof Map) {
                 // 递归处理嵌套Map
-                result.put(key, deepDesensitizeMap((Map<String, Object>) value, entity));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                result.put(key, nestedMap == null ? value : deepDesensitizeMap(nestedMap, entity));
             } else if (value instanceof List) {
                 // 处理List
                 result.put(key, deepDesensitizeList((List<?>) value, entity));
@@ -209,7 +214,8 @@ public class PartialDesensitizationStrategy implements DesensitizationStrategy {
                     result.add(strItem);
                 }
             } else if (item instanceof Map) {
-                result.add(deepDesensitizeMap((Map<String, Object>) item, entity));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(item);
+                result.add(nestedMap == null ? item : deepDesensitizeMap(nestedMap, entity));
             } else if (item instanceof List) {
                 result.add(deepDesensitizeList((List<?>) item, entity));
             } else {

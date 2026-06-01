@@ -3,7 +3,6 @@ package com.hdu.apisensitivities.controller;
 import com.hdu.apisensitivities.entity.*;
 import com.hdu.apisensitivities.service.LlmConfigService;
 import com.hdu.apisensitivities.service.LlmProxyService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,7 +23,6 @@ public class LlmProxyController {
      * @param llmProxyService LLM代理服务，负责实际的请求处理和转发
      * @param configService   配置服务，管理不同提供商的配置信息
      */
-    @Autowired
     public LlmProxyController(LlmProxyService llmProxyService, LlmConfigService configService) {
         this.llmProxyService = llmProxyService;
         this.configService = configService;

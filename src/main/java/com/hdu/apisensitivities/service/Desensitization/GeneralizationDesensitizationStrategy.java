@@ -2,6 +2,7 @@ package com.hdu.apisensitivities.service.Desensitization;
 
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -335,10 +336,16 @@ public class GeneralizationDesensitizationStrategy implements DesensitizationStr
                     Object listElement = ((List<?>) value).get(arrayIndex);
                     if (index == pathParts.length - 1 && listElement instanceof String) {
                         // 最后一部分且是字符串，进行脱敏
-                        ((List<Object>) value).set(arrayIndex, "[" + generalization + "]");
+                        List<Object> listValue = CollectionTypeUtils.asObjectList(value);
+                        if (listValue != null) {
+                            listValue.set(arrayIndex, "[" + generalization + "]");
+                        }
                     } else if (listElement instanceof Map) {
                         // 嵌套对象，继续递归
-                        processFieldPath((Map<String, Object>) listElement, pathParts, index + 1, generalization);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(listElement);
+                        if (nestedMap != null) {
+                            processFieldPath(nestedMap, pathParts, index + 1, generalization);
+                        }
                     }
                 }
             }
@@ -349,12 +356,18 @@ public class GeneralizationDesensitizationStrategy implements DesensitizationStr
                 map.put(part, "[" + generalization + "]");
             } else if (value instanceof Map) {
                 // 嵌套对象，继续递归
-                processFieldPath((Map<String, Object>) value, pathParts, index + 1, generalization);
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                if (nestedMap != null) {
+                    processFieldPath(nestedMap, pathParts, index + 1, generalization);
+                }
             } else if (value instanceof List) {
                 // 列表，需要递归处理每个元素
                 for (Object element : (List<?>) value) {
                     if (element instanceof Map) {
-                        processFieldPath((Map<String, Object>) element, pathParts, index + 1, generalization);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(element);
+                        if (nestedMap != null) {
+                            processFieldPath(nestedMap, pathParts, index + 1, generalization);
+                        }
                     }
                 }
             }
@@ -391,7 +404,8 @@ public class GeneralizationDesensitizationStrategy implements DesensitizationStr
                 }
             } else if (value instanceof Map) {
                 // 递归处理嵌套Map
-                result.put(key, deepGeneralizeMap((Map<String, Object>) value, entity, generalization));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                result.put(key, nestedMap == null ? value : deepGeneralizeMap(nestedMap, entity, generalization));
             } else if (value instanceof List) {
                 // 处理List
                 result.put(key, deepGeneralizeList((List<?>) value, entity, generalization));
@@ -418,7 +432,8 @@ public class GeneralizationDesensitizationStrategy implements DesensitizationStr
                 result.add(strItem);
             } else if (item instanceof Map) {
                 // 递归处理嵌套Map
-                result.add(deepGeneralizeMap((Map<String, Object>) item, entity, generalization));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(item);
+                result.add(nestedMap == null ? item : deepGeneralizeMap(nestedMap, entity, generalization));
             } else if (item instanceof List) {
                 // 递归处理嵌套List
                 result.add(deepGeneralizeList((List<?>) item, entity, generalization));

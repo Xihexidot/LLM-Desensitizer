@@ -2,6 +2,7 @@ package com.hdu.apisensitivities.service.Desensitization;
 
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -194,10 +195,16 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
                     Object listElement = ((List<?>) value).get(arrayIndex);
                     if (index == pathParts.length - 1 && listElement instanceof String) {
                         // 最后一部分且是字符串，进行替换
-                        ((List<Object>) value).set(arrayIndex, "[" + replacement + "]");
+                        List<Object> listValue = CollectionTypeUtils.asObjectList(value);
+                        if (listValue != null) {
+                            listValue.set(arrayIndex, "[" + replacement + "]");
+                        }
                     } else if (listElement instanceof Map) {
                         // 嵌套对象，继续递归
-                        processReplaceFieldPath((Map<String, Object>) listElement, pathParts, index + 1, replacement);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(listElement);
+                        if (nestedMap != null) {
+                            processReplaceFieldPath(nestedMap, pathParts, index + 1, replacement);
+                        }
                     }
                 }
             }
@@ -208,12 +215,18 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
                 map.put(part, "[" + replacement + "]");
             } else if (value instanceof Map) {
                 // 嵌套对象，继续递归
-                processReplaceFieldPath((Map<String, Object>) value, pathParts, index + 1, replacement);
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                if (nestedMap != null) {
+                    processReplaceFieldPath(nestedMap, pathParts, index + 1, replacement);
+                }
             } else if (value instanceof List) {
                 // 列表，需要递归处理每个元素
                 for (Object element : (List<?>) value) {
                     if (element instanceof Map) {
-                        processReplaceFieldPath((Map<String, Object>) element, pathParts, index + 1, replacement);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(element);
+                        if (nestedMap != null) {
+                            processReplaceFieldPath(nestedMap, pathParts, index + 1, replacement);
+                        }
                     }
                 }
             }
@@ -250,7 +263,8 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
                 }
             } else if (value instanceof Map) {
                 // 递归处理嵌套Map
-                result.put(key, deepReplaceMap((Map<String, Object>) value, entity, replacement));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                result.put(key, nestedMap == null ? value : deepReplaceMap(nestedMap, entity, replacement));
             } else if (value instanceof List) {
                 // 处理List
                 result.put(key, deepReplaceList((List<?>) value, entity, replacement));
@@ -277,7 +291,8 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
                 result.add(strItem);
             } else if (item instanceof Map) {
                 // 递归处理嵌套Map
-                result.add(deepReplaceMap((Map<String, Object>) item, entity, replacement));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(item);
+                result.add(nestedMap == null ? item : deepReplaceMap(nestedMap, entity, replacement));
             } else if (item instanceof List) {
                 // 递归处理嵌套List
                 result.add(deepReplaceList((List<?>) item, entity, replacement));

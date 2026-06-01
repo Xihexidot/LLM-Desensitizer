@@ -4,8 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hdu.apisensitivities.config.LlmConfig;
 import com.hdu.apisensitivities.entity.*;
 import com.hdu.apisensitivities.service.LlmClient.LlmClient;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -33,11 +33,8 @@ import com.hdu.apisensitivities.service.Desensitization.SemanticPlaceholderStrat
 @Slf4j
 @Service
 public class LlmProxyService {
-    @Autowired
-    private NlpScanner nlpScanner;
-
-    @Autowired
-    private SemanticPlaceholderStrategy semanticPlaceholderStrategy; // 占位符策略
+    private final NlpScanner nlpScanner;
+    private final SemanticPlaceholderStrategy semanticPlaceholderStrategy;
     private final DesensitizationManager desensitizationManager;
     private final LlmConfigService configService;
     private final Map<LlmProvider, LlmClient> llmClients;
@@ -49,10 +46,13 @@ public class LlmProxyService {
      * @param configService          LLM 提供商配置服务，获取各提供商的 API 密钥、端点等配置
      * @param clients                所有已注册的 LLM 客户端实现，将按支持的提供商自动映射
      */
-    @Autowired
-    public LlmProxyService(DesensitizationManager desensitizationManager,
+    public LlmProxyService(NlpScanner nlpScanner,
+            SemanticPlaceholderStrategy semanticPlaceholderStrategy,
+            DesensitizationManager desensitizationManager,
             LlmConfigService configService,
             List<LlmClient> clients) {
+        this.nlpScanner = nlpScanner;
+        this.semanticPlaceholderStrategy = semanticPlaceholderStrategy;
         this.desensitizationManager = desensitizationManager;
         this.configService = configService;
         this.llmClients = clients.stream()
@@ -336,11 +336,10 @@ public class LlmProxyService {
     private void populateStructuredRequestContent(LlmRequest request, DesensitizationRequest desensitizationRequest) {
         if (hasParameter(request, "structuredData")) {
             Object structuredDataObj = request.getParameters().get("structuredData");
-            if (structuredDataObj instanceof Map) {
-                Map<String, Object> structuredData = (Map<String, Object>) structuredDataObj;
+            Map<String, Object> structuredData = CollectionTypeUtils.asStringObjectMap(structuredDataObj);
+            if (structuredData != null) {
                 desensitizationRequest.setStructuredData(structuredData);
-                log.debug("使用参数中的结构化数据，字段数量: {}",
-                        structuredData != null ? structuredData.size() : 0);
+                log.debug("使用参数中的结构化数据，字段数量: {}", structuredData.size());
             } else {
                 log.warn("structuredData参数不是Map类型，实际类型: {}",
                         structuredDataObj != null ? structuredDataObj.getClass().getName() : "null");
@@ -400,64 +399,6 @@ public class LlmProxyService {
             return null;
         }
         return prompt.length() > 100 ? prompt.substring(0, 100) + "..." : prompt;
-    }
-
-    // 为输出构建脱敏请求
-    private DesensitizationRequest buildDesensitizationResponseForOutput(String response, LlmRequest request) {
-        String inputDataType = request.getDataType() != null ? request.getDataType() : "TEXT";
-
-        DesensitizationRequest desensitizationRequest = createBaseDesensitizationRequest(request, inputDataType); // 默认保持与输入相同的数据类型
-
-        // 根据输入数据类型和响应内容决定如何处理输出
-        switch (inputDataType) {
-            case "JSON":
-                // 对于JSON输入，尝试将响应解析为JSON
-                if (response != null) {
-                    try {
-                        Map<String, Object> parsedData = parseJson(response);
-                        if (parsedData != null && !parsedData.isEmpty()) {
-                            desensitizationRequest.setStructuredData(parsedData);
-                            log.debug("输出响应成功解析为JSON，字段数量: {}", parsedData.size());
-                        } else {
-                            // 解析成功但数据为空，作为文本处理
-                            desensitizationRequest.setContent(response);
-                            desensitizationRequest.setDataType("TEXT"); // 更新为文本类型
-                            log.debug("输出响应解析为JSON但为空，作为文本处理");
-                        }
-                    } catch (Exception e) {
-                        // 解析失败，作为文本处理
-                        desensitizationRequest.setContent(response);
-                        desensitizationRequest.setDataType("TEXT"); // 更新为文本类型
-                        log.debug("无法将输出响应解析为JSON: {}, 作为文本处理", e.getMessage());
-                    }
-                }
-                break;
-            case "XML":
-                // 对于XML输入，尝试将响应解析为结构化数据
-                if (response != null) {
-                    try {
-                        // 这里可以添加XML解析逻辑
-                        // 暂时作为文本处理
-                        desensitizationRequest.setContent(response);
-                        desensitizationRequest.setDataType("TEXT"); // 更新为文本类型
-                    } catch (Exception e) {
-                        desensitizationRequest.setContent(response);
-                        desensitizationRequest.setDataType("TEXT"); // 更新为文本类型
-                    }
-                }
-                break;
-            case "IMAGE", "AUDIO", "PDF", "DOC":
-                // 对于二进制输入，响应通常是文本描述
-                desensitizationRequest.setContent(response);
-                desensitizationRequest.setDataType("TEXT"); // 更新为文本类型
-                break;
-            default:
-                // 默认作为文本处理
-                desensitizationRequest.setContent(response);
-                break;
-        }
-
-        return desensitizationRequest;
     }
 
     // 根据数据类型调用LLM API

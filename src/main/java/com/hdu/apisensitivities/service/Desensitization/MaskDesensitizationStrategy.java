@@ -2,6 +2,7 @@ package com.hdu.apisensitivities.service.Desensitization;
 
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -184,12 +185,16 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                     if (index == pathParts.length - 1 && listElement instanceof String) {
                         // 最后一部分且是字符串，进行脱敏
                         String strValue = (String) listElement;
-                        ((List<Object>) value).set(arrayIndex,
-                                strValue.replace(sensitiveEntity.getOriginalText(), mask));
+                        List<Object> listValue = CollectionTypeUtils.asObjectList(value);
+                        if (listValue != null) {
+                            listValue.set(arrayIndex, strValue.replace(sensitiveEntity.getOriginalText(), mask));
+                        }
                     } else if (listElement instanceof Map) {
                         // 嵌套对象，继续递归
-                        processFieldPath((Map<String, Object>) listElement, pathParts, index + 1, sensitiveEntity,
-                                mask);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(listElement);
+                        if (nestedMap != null) {
+                            processFieldPath(nestedMap, pathParts, index + 1, sensitiveEntity, mask);
+                        }
                     }
                 }
             }
@@ -201,12 +206,18 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 map.put(part, strValue.replace(sensitiveEntity.getOriginalText(), mask));
             } else if (value instanceof Map) {
                 // 嵌套对象，继续递归
-                processFieldPath((Map<String, Object>) value, pathParts, index + 1, sensitiveEntity, mask);
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                if (nestedMap != null) {
+                    processFieldPath(nestedMap, pathParts, index + 1, sensitiveEntity, mask);
+                }
             } else if (value instanceof List) {
                 // 列表，需要递归处理每个元素
                 for (Object element : (List<?>) value) {
                     if (element instanceof Map) {
-                        processFieldPath((Map<String, Object>) element, pathParts, index + 1, sensitiveEntity, mask);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(element);
+                        if (nestedMap != null) {
+                            processFieldPath(nestedMap, pathParts, index + 1, sensitiveEntity, mask);
+                        }
                     }
                 }
             }
@@ -243,7 +254,8 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 }
             } else if (value instanceof Map) {
                 // 递归处理嵌套Map
-                result.put(key, deepMaskMap((Map<String, Object>) value, entity, mask));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                result.put(key, nestedMap == null ? value : deepMaskMap(nestedMap, entity, mask));
             } else if (value instanceof List) {
                 // 处理List
                 result.put(key, deepMaskList((List<?>) value, entity, mask));
@@ -270,7 +282,8 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 result.add(strItem);
             } else if (item instanceof Map) {
                 // 递归处理嵌套Map
-                result.add(deepMaskMap((Map<String, Object>) item, entity, mask));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(item);
+                result.add(nestedMap == null ? item : deepMaskMap(nestedMap, entity, mask));
             } else if (item instanceof List) {
                 // 递归处理嵌套List
                 result.add(deepMaskList((List<?>) item, entity, mask));
@@ -283,43 +296,4 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
         return result;
     }
 
-    // 处理多个实体的深度遍历方法
-    private List<Object> deepMaskList(List<?> list, List<SensitiveEntity> entities) {
-        List<Object> result = new ArrayList<>();
-
-        for (Object item : list) {
-            if (item instanceof String) {
-                String strItem = (String) item;
-                // 对每个字符串项应用所有实体的掩码
-                for (SensitiveEntity entity : entities) {
-                    String mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
-                    if (strItem.contains(entity.getOriginalText())) {
-                        strItem = strItem.replace(entity.getOriginalText(), mask);
-                    }
-                }
-                result.add(strItem);
-            } else if (item instanceof Map) {
-                // 递归处理嵌套Map
-                Map<String, Object> maskedMap = new HashMap<>((Map<String, Object>) item);
-                for (SensitiveEntity entity : entities) {
-                    String mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
-                    maskedMap = deepMaskMap(maskedMap, entity, mask);
-                }
-                result.add(maskedMap);
-            } else if (item instanceof List) {
-                // 递归处理嵌套List
-                result.add(deepMaskList((List<?>) item, entities));
-            } else {
-                // 其他类型直接保留
-                result.add(item);
-            }
-        }
-
-        return result;
-    }
-
-    // 日志记录方法
-    private void log(String message, Object... args) {
-        log.info("[MaskDesensitizationStrategy] " + message, args);
-    }
 }

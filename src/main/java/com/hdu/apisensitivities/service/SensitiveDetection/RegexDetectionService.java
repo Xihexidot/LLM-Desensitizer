@@ -3,6 +3,7 @@ package com.hdu.apisensitivities.service.SensitiveDetection;
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.service.ScenarioPerception.ScenarioAnalysisResult;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import com.hdu.apisensitivities.utils.PatternRegistry;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -359,8 +360,9 @@ public class RegexDetectionService implements SensitiveDetectionService {
         switch (normalizedDataType) {
             case "JSON":
             case "XML":
-                if (data instanceof Map) {
-                    return detectSensitiveInfoInStructuredData((Map<String, Object>) data, language, includeTypes);
+                Map<String, Object> structuredData = CollectionTypeUtils.asStringObjectMap(data);
+                if (structuredData != null) {
+                    return detectSensitiveInfoInStructuredData(structuredData, language, includeTypes);
                 }
                 return detectSensitiveInfo(data.toString(), language, includeTypes);
             case "IMAGE":

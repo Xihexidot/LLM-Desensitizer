@@ -2,6 +2,7 @@ package com.hdu.apisensitivities.service.Desensitization;
 
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import org.springframework.stereotype.Component;
 import java.util.*;
 
@@ -53,7 +54,11 @@ public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
             return text;
         }
 
-        List<String> entities = (List<String>) args[0];
+        List<String> entities = CollectionTypeUtils.asStringList(args[0]);
+        if (entities == null) {
+            return text;
+        }
+
         // 🌟 避坑指南：先按长度降序排列，防止“李华”把“李华强”切断
         entities.sort((a, b) -> Integer.compare(b.length(), a.length()));
 

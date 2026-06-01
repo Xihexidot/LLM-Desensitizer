@@ -4,7 +4,6 @@ import com.hdu.apisensitivities.dto.SensitiveRule;
 
 import com.hdu.apisensitivities.mapper.SensitiveRuleMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,9 +18,8 @@ public class SensitiveRuleService {
     private final SensitiveRuleMapper sensitiveRuleMapper;
     private final CustomPatternDetectionService customPatternDetectionService;
 
-    @Autowired
     public SensitiveRuleService(SensitiveRuleMapper sensitiveRuleMapper,
-                                CustomPatternDetectionService customPatternDetectionService) {
+            CustomPatternDetectionService customPatternDetectionService) {
         this.sensitiveRuleMapper = sensitiveRuleMapper;
         this.customPatternDetectionService = customPatternDetectionService;
     }
@@ -123,4 +121,3 @@ public class SensitiveRuleService {
         }
     }
 }
-

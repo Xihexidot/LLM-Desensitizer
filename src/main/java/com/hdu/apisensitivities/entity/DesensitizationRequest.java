@@ -27,6 +27,7 @@ public class DesensitizationRequest {
     private Map<String, Object> metadata; // 元数据（如文件名、格式等）
     private boolean preserveStructure; // 是否保留原始数据结构
     private Set<String> includeTypes; // 需要检测的敏感类型集合
+    @Builder.Default
     private boolean autoScenarioDetection = false; // 是否开启自动情景感知，默认关闭
     private String manualScenarioType; // 用户手动指定的情景类型
     private String sessionId; // 会话唯一标识，用于标识同一次对话（如前端生成的 UUID 或聊天会话 ID）

@@ -2,7 +2,6 @@ package com.hdu.apisensitivities.controller;
 
 import com.hdu.apisensitivities.dto.SensitiveRule;
 import com.hdu.apisensitivities.service.SensitiveDetection.SensitiveRuleService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,7 +23,6 @@ public class SensitiveRuleController {
      *
      * @param sensitiveRuleService 敏感规则服务，负责执行具体的规则管理操作
      */
-    @Autowired
     public SensitiveRuleController(SensitiveRuleService sensitiveRuleService) {
         this.sensitiveRuleService = sensitiveRuleService;
     }

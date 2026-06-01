@@ -6,13 +6,11 @@ import com.hdu.apisensitivities.entity.DesensitizationResponse;
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.service.ScenarioPerception.ScenarioAnalysisResult;
-import com.hdu.apisensitivities.service.ScenarioPerception.ScenarioPerceptionService;
 import com.hdu.apisensitivities.service.Desensitization.DesensitizationStrategy;
 import com.hdu.apisensitivities.service.Desensitization.DesensitizeRequestContext;
 import com.hdu.apisensitivities.service.SensitiveDetection.TextSensitiveDetectionService;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -39,37 +37,21 @@ public class DesensitizationManager {
 
     private final TextSensitiveDetectionService detectionService;
     private final List<DesensitizationStrategy> strategies;
-    private final Set<String> blacklist;
-    private final Set<String> whitelist;
     private final DataParserManager dataParserManager;
-    private final ScenarioPerceptionService scenarioPerceptionService;
-    private final ScenarioPerceptionService llmScenarioPerceptionService;
 
     /**
      * 构造脱敏管理器实例。
      *
-     * @param detectionService             敏感信息检测服务，用于识别文本中的敏感实体
-     * @param strategies                   所有可用的脱敏策略实现，将根据上下文自动选择
-     * @param dataParserManager            数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
-     * @param scenarioPerceptionService    基于关键词匹配的情景感知服务（默认、快速）
-     * @param llmScenarioPerceptionService 基于 LLM 的情景感知服务（更准确但成本较高）
+     * @param detectionService  敏感信息检测服务，用于识别文本中的敏感实体
+     * @param strategies        所有可用的脱敏策略实现，将根据上下文自动选择
+     * @param dataParserManager 数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
      */
-    @Autowired
     public DesensitizationManager(TextSensitiveDetectionService detectionService,
             List<DesensitizationStrategy> strategies,
-            DataParserManager dataParserManager,
-
-            @org.springframework.beans.factory.annotation.Qualifier("keywordBasedScenarioPerceptionService")
-
-            ScenarioPerceptionService scenarioPerceptionService,
-            @org.springframework.beans.factory.annotation.Qualifier("llmScenarioPerceptionService") ScenarioPerceptionService llmScenarioPerceptionService) {
+            DataParserManager dataParserManager) {
         this.detectionService = detectionService;
         this.strategies = strategies;
-        this.blacklist = loadBlacklist();
-        this.whitelist = loadWhitelist();
         this.dataParserManager = dataParserManager;
-        this.scenarioPerceptionService = scenarioPerceptionService;
-        this.llmScenarioPerceptionService = llmScenarioPerceptionService;
     }
 
     /**
@@ -236,60 +218,6 @@ public class DesensitizationManager {
                 .filter(s -> s.supportedTypes().containsAll(types))
                 .findFirst()
                 .orElse(strategies.get(0)); // 默认使用第一个策略
-    }
-
-    // 根据情景分析结果过滤敏感实体
-    private List<SensitiveEntity> filterEntitiesByScenario(List<SensitiveEntity> entities,
-            ScenarioAnalysisResult scenarioResult) {
-        if (scenarioResult == null) {
-            return entities;
-        }
-
-        List<SensitiveEntity> filteredEntities = entities.stream()
-                .filter(entity -> scenarioResult.shouldIncludeType(entity.getType().name()))
-                .collect(java.util.stream.Collectors.toList());
-
-        if (filteredEntities.size() != entities.size()) {
-            log.info("根据情景过滤敏感实体，过滤前: {} 个，过滤后: {} 个",
-                    entities.size(), filteredEntities.size());
-        }
-
-        return filteredEntities;
-    }
-
-    // TODO: 这里黑白名单有点影响，测试数据不少会直接被黑白名单过滤
-
-    // 黑名单：这些内容一定要脱敏
-    private Set<String> loadBlacklist() {
-        return Set.of("secret_key", "password", "token", "private_key", "auth_key");
-    }
-
-    // 白名单：这些内容不需要脱敏（公开的示例数据）
-    private Set<String> loadWhitelist() {
-        return Set.of("example@example.com", "400-123-4567", "test@test.com");
-    }
-
-    private List<SensitiveEntity> filterEntities(List<SensitiveEntity> entities, DesensitizationRequest request) {
-        return entities.stream()
-                .filter(entity -> !isInBlacklist(entity.getOriginalText(), request))
-                .filter(entity -> !isInWhitelist(entity.getOriginalText(), request))
-                .collect(Collectors.toList());
-    }
-
-    private boolean isInBlacklist(String text, DesensitizationRequest request) {
-        Set<String> effectiveBlacklist = new HashSet<>(blacklist);
-        if (request.getBlacklist() != null) {
-            effectiveBlacklist.addAll(request.getBlacklist());
-        }
-        return effectiveBlacklist.stream().anyMatch(text::contains);
-    }
-
-    private boolean isInWhitelist(String text, DesensitizationRequest request) {
-        Set<String> effectiveWhitelist = new HashSet<>(whitelist);
-        if (request.getWhitelist() != null) {
-            effectiveWhitelist.addAll(request.getWhitelist());
-        }
-        return effectiveWhitelist.stream().anyMatch(text::contains);
     }
 
     // 内部类，用于封装脱敏结果
