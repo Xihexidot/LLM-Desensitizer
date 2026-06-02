@@ -48,6 +48,16 @@ function handleKeydown(event) {
 
 async function reviewAndContinue({ input, trigger, content }) {
   try {
+    if (looksAlreadyDesensitized(content)) {
+      continueSend({ input, trigger, content });
+      return;
+    }
+
+    if (!isChromeRuntimeAvailable()) {
+      window.alert("[AI 输入安全助手] 插件上下文已失效，请刷新当前页面后重试。");
+      return;
+    }
+
     const response = await chrome.runtime.sendMessage({
       type: "gateway-review-input",
       payload: {
@@ -297,16 +307,22 @@ function markBypass(element) {
 }
 
 function shouldBypass(element) {
-  const until = bypassElements.get(element);
-  if (!until) {
-    return false;
+  let current = element;
+  let depth = 0;
+  while (current instanceof Element && depth < 4) {
+    const until = bypassElements.get(current);
+    if (until) {
+      if (until < Date.now()) {
+        bypassElements.delete(current);
+        return false;
+      }
+      bypassElements.delete(current);
+      return true;
+    }
+    current = current.parentElement;
+    depth += 1;
   }
-  if (until < Date.now()) {
-    bypassElements.delete(element);
-    return false;
-  }
-  bypassElements.delete(element);
-  return true;
+  return false;
 }
 
 function isPossibleIconSendTrigger(candidate, input) {
@@ -356,4 +372,19 @@ function collectAncestors(element, depthLimit) {
 
 function guessLanguage(content) {
   return /[\u4e00-\u9fa5]/.test(content) ? "zh" : "en";
+}
+
+function looksAlreadyDesensitized(content) {
+  return /\[(?:PHONE|ID_CARD|BANK_CARD|EMAIL|ADDRESS|NAME|PERSON|MASKED)_[0-9]+\]/.test(
+    content,
+  );
+}
+
+function isChromeRuntimeAvailable() {
+  return (
+    typeof chrome !== "undefined" &&
+    !!chrome.runtime &&
+    !!chrome.runtime.id &&
+    typeof chrome.runtime.sendMessage === "function"
+  );
 }

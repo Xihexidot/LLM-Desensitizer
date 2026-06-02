@@ -34,6 +34,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Service
 public class DesensitizationManager {
+    private static final String DEFAULT_TEXT_STRATEGY_NAME = "maskDesensitizationStrategy";
 
     private final TextSensitiveDetectionService detectionService;
     private final List<DesensitizationStrategy> strategies;
@@ -42,9 +43,9 @@ public class DesensitizationManager {
     /**
      * 构造脱敏管理器实例。
      *
-     * @param detectionService             敏感信息检测服务，用于识别文本中的敏感实体
-     * @param strategies                   所有可用的脱敏策略实现，将根据上下文自动选择
-     * @param dataParserManager            数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
+     * @param detectionService  敏感信息检测服务，用于识别文本中的敏感实体
+     * @param strategies        所有可用的脱敏策略实现，将根据上下文自动选择
+     * @param dataParserManager 数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
      */
     public DesensitizationManager(TextSensitiveDetectionService detectionService,
             List<DesensitizationStrategy> strategies,
@@ -89,7 +90,6 @@ public class DesensitizationManager {
             ScenarioAnalysisResult scenarioResult = prepareDetectionScopeForCurrentMode(request);
 
             List<SensitiveEntity> entities = detectSensitiveEntities(request, scenarioResult);
-
             DesensitizationResult result = applyDesensitization(request, entities);
             return buildSuccessResponse(result, entities);
 
@@ -155,6 +155,8 @@ public class DesensitizationManager {
                     scenarioResult);
         }
 
+        entities = resolveOverlappingEntities(entities);
+
         log.info("检测完成，类型: {}, 发现 {} 个敏感实体",
                 request.getDataType() != null ? request.getDataType() : "TEXT",
                 entities.size());
@@ -201,6 +203,11 @@ public class DesensitizationManager {
 
         // 2. 根据数据类型选择支持的策略
         if (dataType != null) {
+            Optional<DesensitizationStrategy> preferredStrategy = findPreferredStrategyForDataType(dataType);
+            if (preferredStrategy.isPresent()) {
+                return preferredStrategy.get();
+            }
+
             Optional<DesensitizationStrategy> strategy = strategies.stream()
                     .filter(s -> s.supportsDataType(dataType))
                     .findFirst();
@@ -218,6 +225,83 @@ public class DesensitizationManager {
                 .filter(s -> s.supportedTypes().containsAll(types))
                 .findFirst()
                 .orElse(strategies.get(0)); // 默认使用第一个策略
+    }
+
+    private List<SensitiveEntity> resolveOverlappingEntities(List<SensitiveEntity> entities) {
+        if (entities == null || entities.size() <= 1) {
+            return entities == null ? Collections.emptyList() : entities;
+        }
+
+        List<SensitiveEntity> sortedEntities = new ArrayList<>(entities);
+        sortedEntities.sort(Comparator.comparingInt(SensitiveEntity::getStart)
+                .thenComparingInt(entity -> entity.getEnd() - entity.getStart()));
+
+        List<SensitiveEntity> resolved = new ArrayList<>();
+        for (SensitiveEntity candidate : sortedEntities) {
+            if (resolved.isEmpty()) {
+                resolved.add(candidate);
+                continue;
+            }
+
+            SensitiveEntity last = resolved.get(resolved.size() - 1);
+            if (!isOverlapping(last, candidate)) {
+                resolved.add(candidate);
+                continue;
+            }
+
+            if (preferCandidateOverExisting(last, candidate)) {
+                resolved.set(resolved.size() - 1, candidate);
+            }
+        }
+
+        return resolved;
+    }
+
+    private boolean isOverlapping(SensitiveEntity left, SensitiveEntity right) {
+        return left.getStart() < right.getEnd() && right.getStart() < left.getEnd();
+    }
+
+    private boolean preferCandidateOverExisting(SensitiveEntity existing, SensitiveEntity candidate) {
+        int existingSpan = existing.getEnd() - existing.getStart();
+        int candidateSpan = candidate.getEnd() - candidate.getStart();
+        if (candidateSpan != existingSpan) {
+            return candidateSpan < existingSpan;
+        }
+
+        int confidenceCompare = Double.compare(candidate.getConfidence(), existing.getConfidence());
+        if (confidenceCompare != 0) {
+            return confidenceCompare > 0;
+        }
+
+        return sensitiveTypePriority(candidate.getType()) > sensitiveTypePriority(existing.getType());
+    }
+
+    private int sensitiveTypePriority(SensitiveType type) {
+        if (type == null) {
+            return 0;
+        }
+        return switch (type) {
+            case ID_CARD, PHONE_NUMBER, BANK_CARD, CREDIT_CARD, EMAIL, PASSWORD -> 4;
+            case NAME -> 3;
+            case ADDRESS, ORGANIZATION -> 2;
+            default -> 1;
+        };
+    }
+
+    private Optional<DesensitizationStrategy> findPreferredStrategyForDataType(String dataType) {
+        if (dataType == null) {
+            return Optional.empty();
+        }
+
+        String normalizedDataType = dataType.toUpperCase(Locale.ROOT);
+        if (!Set.of("TEXT", "JSON", "XML").contains(normalizedDataType)) {
+            return Optional.empty();
+        }
+
+        return strategies.stream()
+                .filter(strategy -> DEFAULT_TEXT_STRATEGY_NAME.equals(strategy.getName()))
+                .filter(strategy -> strategy.supportsDataType(normalizedDataType))
+                .findFirst();
     }
 
     // 内部类，用于封装脱敏结果
