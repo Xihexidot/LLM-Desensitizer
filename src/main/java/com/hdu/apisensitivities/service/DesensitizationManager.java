@@ -42,9 +42,9 @@ public class DesensitizationManager {
     /**
      * 构造脱敏管理器实例。
      *
-     * @param detectionService  敏感信息检测服务，用于识别文本中的敏感实体
-     * @param strategies        所有可用的脱敏策略实现，将根据上下文自动选择
-     * @param dataParserManager 数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
+     * @param detectionService             敏感信息检测服务，用于识别文本中的敏感实体
+     * @param strategies                   所有可用的脱敏策略实现，将根据上下文自动选择
+     * @param dataParserManager            数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
      */
     public DesensitizationManager(TextSensitiveDetectionService detectionService,
             List<DesensitizationStrategy> strategies,

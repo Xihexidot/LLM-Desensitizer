@@ -19,7 +19,7 @@ public class SensitiveRuleService {
     private final CustomPatternDetectionService customPatternDetectionService;
 
     public SensitiveRuleService(SensitiveRuleMapper sensitiveRuleMapper,
-            CustomPatternDetectionService customPatternDetectionService) {
+                                CustomPatternDetectionService customPatternDetectionService) {
         this.sensitiveRuleMapper = sensitiveRuleMapper;
         this.customPatternDetectionService = customPatternDetectionService;
     }
@@ -121,3 +121,4 @@ public class SensitiveRuleService {
         }
     }
 }
+

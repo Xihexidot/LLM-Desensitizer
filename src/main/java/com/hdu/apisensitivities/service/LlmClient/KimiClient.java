@@ -30,9 +30,9 @@ public class KimiClient implements LlmClient {
 
     @Override
     public String sendRequest(String prompt, LlmConfig config, Map<String, Object> parameters) {
-        log.info("Kimi API请求准备中，URL: {}, 模型: {}, 温度: {}, 最大令牌数: {}",
+        log.info("Kimi API请求准备中，URL: {}, 模型: {}, 温度: {}, 最大令牌数: {}", 
                 config.getApiUrl(), config.getModel(), config.getTemperature(), config.getMaxTokens());
-
+        
         try {
             HttpHeaders headers = createHeaders(config);
             Map<String, Object> requestBody = createRequestBody(prompt, config, parameters);
@@ -44,9 +44,8 @@ public class KimiClient implements LlmClient {
                     Objects.requireNonNull(config.getApiUrl(), "Kimi API URL不能为空"),
                     Objects.requireNonNull(HttpMethod.POST),
                     entity,
-                    new ParameterizedTypeReference<>() {
-                    });
-
+                    new ParameterizedTypeReference<>() {});
+            
             log.info("Kimi API响应状态码: {}", response.getStatusCode());
             log.debug("Kimi API响应体: {}", response.getBody());
 
@@ -68,20 +67,19 @@ public class KimiClient implements LlmClient {
     public boolean validateConfig(LlmConfig config) {
         return config.getApiKey() != null && !config.getApiKey().trim().isEmpty();
     }
-
+    
     @Override
-    public String sendStructuredRequest(Map<String, Object> structuredData, LlmConfig config,
-            Map<String, Object> parameters) {
+    public String sendStructuredRequest(Map<String, Object> structuredData, LlmConfig config, Map<String, Object> parameters) {
         log.info("Kimi 结构化数据请求准备中，模型: {}, 参数: {}", config.getModel(), parameters);
-
+        
         try {
             // 将结构化数据转换为JSON字符串
             ObjectMapper mapper = new ObjectMapper();
             String structuredDataJson = mapper.writeValueAsString(structuredData);
-
+            
             // 构建提示词，说明这是结构化数据
             String prompt = "请分析以下结构化数据:\n" + structuredDataJson;
-
+            
             // 复用现有的sendRequest方法发送请求
             return sendRequest(prompt, config, parameters);
         } catch (Exception e) {
@@ -89,19 +87,18 @@ public class KimiClient implements LlmClient {
             throw new RuntimeException("Kimi 结构化数据请求失败: " + e.getMessage(), e);
         }
     }
-
+    
     @Override
-    public String sendBinaryRequest(byte[] binaryData, String dataType, LlmConfig config,
-            Map<String, Object> parameters) {
+    public String sendBinaryRequest(byte[] binaryData, String dataType, LlmConfig config, Map<String, Object> parameters) {
         log.info("Kimi 二进制数据请求准备中，数据类型: {}, 模型: {}", dataType, config.getModel());
-
+        
         try {
             // 将二进制数据转换为Base64编码字符串
             String base64Data = Base64.getEncoder().encodeToString(binaryData);
-
+            
             // 构建提示词，说明这是二进制数据的Base64编码
             String prompt = String.format("这是一个Base64编码的%s数据，请根据需要进行分析:\n%s", dataType, base64Data);
-
+            
             // 复用现有的sendRequest方法发送请求
             return sendRequest(prompt, config, parameters);
         } catch (Exception e) {
@@ -109,7 +106,7 @@ public class KimiClient implements LlmClient {
             throw new RuntimeException("Kimi 二进制数据请求失败: " + e.getMessage(), e);
         }
     }
-
+    
     @Override
     public boolean supportsDataType(String dataType) {
         // 支持的结构化数据类型
@@ -128,7 +125,7 @@ public class KimiClient implements LlmClient {
         Map<String, Object> requestBody = new HashMap<>();
         Map<String, Object> effectiveParameters = parameters == null ? Map.of() : parameters;
         requestBody.put("model", config.getModel());
-
+        
         // 构建messages数组
         List<Map<String, Object>> messages = new ArrayList<>();
         Map<String, Object> message = new HashMap<>();
@@ -136,18 +133,18 @@ public class KimiClient implements LlmClient {
         message.put("content", prompt);
         messages.add(message);
         requestBody.put("messages", messages);
-
+        
         // 添加参数
         requestBody.put("temperature", effectiveParameters.getOrDefault("temperature", config.getTemperature()));
         requestBody.put("max_tokens", effectiveParameters.getOrDefault("maxTokens", config.getMaxTokens()));
-
+        
         // 添加其他参数
         effectiveParameters.forEach((key, value) -> {
             if (!"temperature".equals(key) && !"maxTokens".equals(key)) {
                 requestBody.put(key, value);
             }
         });
-
+        
         return requestBody;
     }
 
@@ -155,18 +152,18 @@ public class KimiClient implements LlmClient {
         if (responseBody == null) {
             throw new RuntimeException("Kimi API返回空响应");
         }
-
+        
         List<Map<String, Object>> choices = CollectionTypeUtils.asStringObjectMapList(responseBody.get("choices"));
         if (choices == null || choices.isEmpty()) {
             throw new RuntimeException("Kimi API响应中没有choices字段");
         }
-
+        
         Map<String, Object> choice = choices.get(0);
         Map<String, Object> message = CollectionTypeUtils.asStringObjectMap(choice.get("message"));
         if (message == null) {
             throw new RuntimeException("Kimi API响应中没有message字段");
         }
-
+        
         if (message.get("content") instanceof String content) {
             return content;
         }

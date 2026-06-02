@@ -28,9 +28,9 @@ public class DeepSeekClient implements LlmClient {
 
     @Override
     public String sendRequest(String prompt, LlmConfig config, Map<String, Object> parameters) {
-        log.info("DeepSeek API请求准备中，URL: {}, 模型: {}, 温度: {}, 最大令牌数: {}",
+        log.info("DeepSeek API请求准备中，URL: {}, 模型: {}, 温度: {}, 最大令牌数: {}", 
                 config.getApiUrl(), config.getModel(), config.getTemperature(), config.getMaxTokens());
-
+        
         // 打印信息到控制台
         System.out.println("=== DeepSeek API 请求信息 ===");
         System.out.println("URL: " + config.getApiUrl());
@@ -39,11 +39,11 @@ public class DeepSeekClient implements LlmClient {
         System.out.println("请求内容: " + prompt);
         System.out.println("温度: " + config.getTemperature());
         System.out.println("最大令牌数: " + config.getMaxTokens());
-
+        
         try {
             HttpHeaders headers = createHeaders(config);
             Map<String, Object> requestBody = createRequestBody(prompt, config, parameters);
-
+            
             // 直接打印请求体
             System.out.println("请求体: " + requestBody);
 
@@ -55,12 +55,11 @@ public class DeepSeekClient implements LlmClient {
                     Objects.requireNonNull(config.getApiUrl(), "DeepSeek API URL不能为空"),
                     Objects.requireNonNull(HttpMethod.POST),
                     entity,
-                    new ParameterizedTypeReference<>() {
-                    });
-
+                    new ParameterizedTypeReference<>() {});
+            
             log.info("DeepSeek API响应状态码: {}", response.getStatusCode());
             log.debug("DeepSeek API响应体: {}", response.getBody());
-
+            
             System.out.println("=== DeepSeek API 响应信息 ===");
             System.out.println("状态码: " + response.getStatusCode());
             System.out.println("响应体: " + response.getBody());
@@ -73,7 +72,7 @@ public class DeepSeekClient implements LlmClient {
             System.out.println("错误消息: " + e.getMessage());
             System.out.println("完整堆栈跟踪:");
             e.printStackTrace(System.out);
-
+            
             log.error("DeepSeek API调用失败，详细信息:", e);
             String errorMessage = e.getMessage() != null ? e.getMessage() : "未提供详细错误信息";
             throw new RuntimeException("DeepSeek API调用失败: " + errorMessage);
@@ -89,20 +88,19 @@ public class DeepSeekClient implements LlmClient {
     public boolean validateConfig(LlmConfig config) {
         return config.getApiKey() != null && !config.getApiKey().trim().isEmpty();
     }
-
+    
     @Override
-    public String sendStructuredRequest(Map<String, Object> structuredData, LlmConfig config,
-            Map<String, Object> parameters) {
+    public String sendStructuredRequest(Map<String, Object> structuredData, LlmConfig config, Map<String, Object> parameters) {
         log.info("DeepSeek 结构化数据请求准备中，模型: {}, 参数: {}", config.getModel(), parameters);
-
+        
         try {
             // 将结构化数据转换为JSON字符串
             ObjectMapper mapper = new ObjectMapper();
             String structuredDataJson = mapper.writeValueAsString(structuredData);
-
+            
             // 构建提示词，说明这是结构化数据
             String prompt = "请分析以下结构化数据:\n" + structuredDataJson;
-
+            
             // 复用现有的sendRequest方法发送请求
             return sendRequest(prompt, config, parameters);
         } catch (Exception e) {
@@ -110,19 +108,18 @@ public class DeepSeekClient implements LlmClient {
             throw new RuntimeException("DeepSeek 结构化数据请求失败: " + e.getMessage(), e);
         }
     }
-
+    
     @Override
-    public String sendBinaryRequest(byte[] binaryData, String dataType, LlmConfig config,
-            Map<String, Object> parameters) {
+    public String sendBinaryRequest(byte[] binaryData, String dataType, LlmConfig config, Map<String, Object> parameters) {
         log.info("DeepSeek 二进制数据请求准备中，数据类型: {}, 模型: {}", dataType, config.getModel());
-
+        
         try {
             // 将二进制数据转换为Base64编码字符串
             String base64Data = Base64.getEncoder().encodeToString(binaryData);
-
+            
             // 构建提示词，说明这是二进制数据的Base64编码
             String prompt = String.format("这是一个Base64编码的%s数据，请根据需要进行分析:\n%s", dataType, base64Data);
-
+            
             // 复用现有的sendRequest方法发送请求
             return sendRequest(prompt, config, parameters);
         } catch (Exception e) {
@@ -130,7 +127,7 @@ public class DeepSeekClient implements LlmClient {
             throw new RuntimeException("DeepSeek 二进制数据请求失败: " + e.getMessage(), e);
         }
     }
-
+    
     @Override
     public boolean supportsDataType(String dataType) {
         // 支持的结构化数据类型
@@ -180,8 +177,7 @@ public class DeepSeekClient implements LlmClient {
         }
 
         if (responseBody.containsKey("choices")) {
-            java.util.List<Map<String, Object>> choices = CollectionTypeUtils
-                    .asStringObjectMapList(responseBody.get("choices"));
+            java.util.List<Map<String, Object>> choices = CollectionTypeUtils.asStringObjectMapList(responseBody.get("choices"));
             if (choices != null && !choices.isEmpty()) {
                 Map<String, Object> choice = choices.get(0);
                 Map<String, Object> message = CollectionTypeUtils.asStringObjectMap(choice.get("message"));
