@@ -1,17 +1,43 @@
 {
   "manifest_version": 3,
-  "name": "DeepSeek 安全网关",
+  "name": "AI 输入安全助手",
   "version": "1.0",
-  "description": "拦截 DeepSeek API 请求，强制经过本地安全网关检查",
+  "description": "在用户发送到 AI 网站前检查输入内容，并提示脱敏或拦截",
   "permissions": [
-    "declarativeNetRequest",
-    "declarativeNetRequestFeedback"
+    "storage"
   ],
   "host_permissions": [
     "https://chat.deepseek.com/*",
+    "https://chatgpt.com/*",
+    "https://*.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://kimi.moonshot.cn/*",
+    "https://www.doubao.com/*",
+    "https://yuanbao.tencent.com/*",
+    "https://claude.ai/*",
+    "https://www.perplexity.ai/*",
     "http://127.0.0.1:8080/*"
   ],
   "background": {
     "service_worker": "background.js"
-  }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.deepseek.com/*",
+        "https://chatgpt.com/*",
+        "https://*.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://kimi.moonshot.cn/*",
+        "https://www.doubao.com/*",
+        "https://yuanbao.tencent.com/*",
+        "https://claude.ai/*",
+        "https://www.perplexity.ai/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }
