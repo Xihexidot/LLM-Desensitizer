@@ -15,7 +15,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       sendResponse({
         ok: false,
         error: error instanceof Error ? error.message : String(error),
-      })
+      }),
     );
 
   return true;
