@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class MaskDesensitizationStrategy implements DesensitizationStrategy {
-    
+
     // 1. 在你的类头部注入全局一致性仓库
     @Autowired
     private GlobalSessionContextRepository contextRepository;
@@ -61,8 +61,21 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 String typeStr = entity.getType().name();
                 String originalText = entity.getOriginalText();
 
-                // 【核心改造】：不再死板地拿 MASK_TEMPLATES.get()
-                // 而是问中央仓库要：如果是同一个人，吐出带有相同序号的占位符！
+                int start = Math.max(0, entity.getStart());
+                int end = Math.min(text.length(), entity.getEnd());
+
+                if (start > end || end > result.length()) {
+                    log.warn("脱敏位置越界，跳过实体: type={} start={} end={} resultLen={}", typeStr, start, end, result.length());
+                    continue;
+                }
+                String actualAtPosition = result.substring(start, end);
+                if (!actualAtPosition.equals(originalText)) {
+                    log.warn("脱敏位置内容不匹配，跳过实体: type={} start={} end={} original='{}' actual='{}'", typeStr, start, end,
+                            originalText, actualAtPosition);
+                    continue;
+                }
+
+                // 一致性占位符生成
                 String mask = contextRepository.getOrCreateConsistencyValue(sessionId, originalText, typeStr,
                         currentId -> {
                             // 如果是新出现的，通过自增出来的 currentId 动态拼接
@@ -74,8 +87,6 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                             return template + "_" + currentId;
                         });
 
-                int start = Math.max(0, entity.getStart());
-                int end = Math.min(text.length(), entity.getEnd());
                 if (start <= end) {
                     result = result.substring(0, start) + mask + result.substring(end);
                 }

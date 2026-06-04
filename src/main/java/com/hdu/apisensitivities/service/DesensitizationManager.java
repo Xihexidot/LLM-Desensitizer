@@ -262,6 +262,11 @@ public class DesensitizationManager {
     }
 
     private boolean preferCandidateOverExisting(SensitiveEntity existing, SensitiveEntity candidate) {
+        int typeCmp = typeSpecificityScore(candidate.getType()) - typeSpecificityScore(existing.getType());
+        if (typeCmp != 0) {
+            return typeCmp > 0;
+        }
+
         int existingSpan = existing.getEnd() - existing.getStart();
         int candidateSpan = candidate.getEnd() - candidate.getStart();
         if (candidateSpan != existingSpan) {
@@ -274,6 +279,20 @@ public class DesensitizationManager {
         }
 
         return sensitiveTypePriority(candidate.getType()) > sensitiveTypePriority(existing.getType());
+    }
+
+    private int typeSpecificityScore(SensitiveType type) {
+        if (type == null) {
+            return 0;
+        }
+        return switch (type) {
+            case ID_CARD, BANK_CARD, CREDIT_CARD, EMAIL, IP_ADDRESS -> 5;
+            case PHONE_NUMBER -> 4;
+            case NAME -> 3;
+            case ADDRESS, ORGANIZATION -> 2;
+            case PASSWORD -> 1;
+            default -> 0;
+        };
     }
 
     private int sensitiveTypePriority(SensitiveType type) {
