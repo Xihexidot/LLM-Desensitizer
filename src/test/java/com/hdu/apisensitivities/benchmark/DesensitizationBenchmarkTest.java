@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hdu.apisensitivities.entity.DesensitizationRequest;
 import com.hdu.apisensitivities.entity.DesensitizationResponse;
 import com.hdu.apisensitivities.entity.SensitiveEntity;
+import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.service.DesensitizationManager;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
@@ -66,18 +67,42 @@ public class DesensitizationBenchmarkTest {
 
             // 匹配实体
             List<String> unmatchedEntities = new ArrayList<>();
+            Set<String> consumedActualKeys = new HashSet<>();
             int matchedCount = 0;
 
             for (Map<String, Object> exp : testCase.getExpected_entities()) {
                 String expText = (String) exp.get("text");
                 String expType = (String) exp.get("type");
+                // 测试数据使用 code-point 位置（emoji=1），Java 内部使用 UTF-16 char 位置（emoji=2）。
+                // 将预期位置从 code-point 转换为 UTF-16 再比较。
+                Integer expStart = cpToUtf16(testCase.getContent(), toInteger(exp.get("start")));
+                Integer expEnd = cpToUtf16(testCase.getContent(), toInteger(exp.get("end")));
+                SensitiveType expectedType = mapDatasetType(expType);
 
                 boolean isFound = actualEntities.stream()
-                        .anyMatch(a -> a.getOriginalText().equals(expText));
+                        .filter(a -> !consumedActualKeys.contains(actualKey(a)))
+                        .anyMatch(a -> {
+                            if (!a.getOriginalText().equals(expText)) {
+                                return false;
+                            }
+                            if (expectedType != null && a.getType() != expectedType) {
+                                return false;
+                            }
+                            if (expStart != null && expEnd != null
+                                    && (a.getStart() != expStart || a.getEnd() != expEnd)) {
+                                return false;
+                            }
+                            return true;
+                        });
 
                 if (isFound) {
                     matchedCount++;
                     totalFound++;
+                    // 标记实际实体已被消费，防止同一实际实体被重复计数
+                    actualEntities.stream()
+                            .filter(a -> a.getOriginalText().equals(expText))
+                            .findFirst()
+                            .ifPresent(a -> consumedActualKeys.add(actualKey(a)));
                 } else {
                     unmatchedEntities.add(expText + "(" + expType + ")");
                 }
@@ -219,6 +244,46 @@ public class DesensitizationBenchmarkTest {
             sb.append(str);
         }
         return sb.toString();
+    }
+
+    /**
+     * 将测试数据集中使用的类型字符串映射为 SensitiveType 枚举。
+     * 若类型不在已知映射中，返回 null（匹配时仅对比 text，不校验 type）。
+     */
+    private SensitiveType mapDatasetType(String datasetType) {
+        if (datasetType == null)
+            return null;
+        return switch (datasetType) {
+            case "person" -> SensitiveType.PERSON;
+            case "phone" -> SensitiveType.PHONE_NUMBER;
+            case "id_number" -> SensitiveType.ID_CARD;
+            case "bank_card" -> SensitiveType.BANK_CARD;
+            case "email" -> SensitiveType.EMAIL;
+            case "address" -> SensitiveType.ADDRESS;
+            case "license_plate" -> SensitiveType.LICENSE_PLATE;
+            case "passport" -> SensitiveType.PASSPORT;
+            default -> null;
+        };
+    }
+
+    private static Integer cpToUtf16(String text, Integer cpIndex) {
+        if (text == null || cpIndex == null || cpIndex < 0 || cpIndex > text.codePointCount(0, text.length())) {
+            return cpIndex;
+        }
+        return text.offsetByCodePoints(0, cpIndex);
+    }
+
+    private Integer toInteger(Object obj) {
+        if (obj instanceof Integer)
+            return (Integer) obj;
+        if (obj instanceof Number)
+            return ((Number) obj).intValue();
+        return null;
+    }
+
+    private String actualKey(SensitiveEntity entity) {
+        return entity.getType().name() + ":" + entity.getStart() + ":" + entity.getEnd() + ":"
+                + entity.getOriginalText();
     }
 
     // 内部类：测试用例结果

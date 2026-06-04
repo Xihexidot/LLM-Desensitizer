@@ -41,6 +41,9 @@ public class ConfidenceScorer {
                 break;
             case API_KEY:
             case PASSWORD:
+                if (!matchedText.matches(".*[A-Za-z].*") || !matchedText.matches(".*\\d.*")) {
+                    return 0.0;
+                }
                 if (ValidationUtils.calculateEntropy(matchedText) < 2.5) {
                     return 0.2;
                 }
