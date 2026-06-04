@@ -89,4 +89,9 @@ public class PatternRegistry {
         public static void addCustomPattern(SensitiveType type, String regex) {
                 PATTERN_MAP.put(type, Pattern.compile(regex));
         }
+
+        // 覆盖内置模式（与 addCustomPattern 行为相同，语义明确）
+        public static void overridePattern(SensitiveType type, String regex) {
+                PATTERN_MAP.put(type, Pattern.compile(regex));
+        }
 }

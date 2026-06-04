@@ -25,7 +25,8 @@ public class SensitiveRuleService {
     }
 
     /**
-     * 初始化时加载所有启用的规则
+     * 初始化时加载所有启用的 CUSTOM 规则。
+     * BUILTIN 规则由 DictConfigService 统一加载覆盖。
      */
     @PostConstruct
     public void init() {
@@ -33,6 +34,9 @@ public class SensitiveRuleService {
         List<SensitiveRule> rules = sensitiveRuleMapper.selectEnabled();
         int count = 0;
         for (SensitiveRule rule : rules) {
+            if ("BUILTIN".equals(rule.getRuleType())) {
+                continue; // BUILTIN 规则由 DictConfigService 处理
+            }
             try {
                 customPatternDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
                 count++;

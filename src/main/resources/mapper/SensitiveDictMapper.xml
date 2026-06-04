@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.hdu.apisensitivities.mapper.SensitiveDictMapper">
+
+    <resultMap id="BaseResultMap" type="com.hdu.apisensitivities.dto.SensitiveDict">
+        <id column="id" property="id" jdbcType="BIGINT"/>
+        <result column="dict_type" property="dictType" jdbcType="VARCHAR"/>
+        <result column="term" property="term" jdbcType="VARCHAR"/>
+        <result column="is_enabled" property="isEnabled" jdbcType="BOOLEAN"/>
+        <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
+    </resultMap>
+
+    <sql id="Base_Column_List">
+        id, dict_type, term, is_enabled, created_at
+    </sql>
+
+    <insert id="insert" parameterType="com.hdu.apisensitivities.dto.SensitiveDict" useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO sensitive_dict (dict_type, term, is_enabled)
+        VALUES (#{dictType}, #{term}, #{isEnabled})
+    </insert>
+
+    <delete id="deleteById">
+        DELETE FROM sensitive_dict WHERE id = #{id}
+    </delete>
+
+    <select id="selectById" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_dict WHERE id = #{id}
+    </select>
+
+    <select id="selectByType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_dict WHERE dict_type = #{dictType}
+    </select>
+
+    <select id="selectEnabledByType" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_dict WHERE dict_type = #{dictType} AND is_enabled = true
+    </select>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT <include refid="Base_Column_List"/>
+        FROM sensitive_dict
+    </select>
+
+</mapper>
