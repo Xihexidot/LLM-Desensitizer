@@ -55,6 +55,10 @@
         </div>
       </div>
 
+      <a class="nav-item" href="#" @click.prevent="$emit('show-dashboard')">仪表盘</a>
+      <a class="nav-item" href="#" @click.prevent="$emit('show-audit')">审计日志</a>
+      <a class="nav-item" href="#" @click.prevent="$emit('show-dict')">词典管理</a>
+
       <a class="nav-item" href="#section-history" @click.prevent="toggleHistory">历史对话</a>
       <div v-if="showHistory" class="history-inline">
         <div class="history-header">

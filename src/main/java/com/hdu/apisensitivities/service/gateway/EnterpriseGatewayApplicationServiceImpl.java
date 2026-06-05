@@ -13,6 +13,7 @@ import com.hdu.apisensitivities.entity.gateway.GatewayResponse;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskDecision;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskLevel;
 import com.hdu.apisensitivities.entity.gateway.GatewayTaskStatus;
+import com.hdu.apisensitivities.repository.GatewayAuditRepository;
 import com.hdu.apisensitivities.service.LlmProxyService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -24,14 +25,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.Collections;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 
 @Service
@@ -42,14 +41,12 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
     private static final String DEFAULT_POLICY_VERSION = "skeleton-v1";
     private static final String DEFAULT_CHANNEL = "backend-api";
     private static final int MAX_FILE_TASKS = 500;
-    private static final int MAX_AUDIT_EVENTS = 2000;
     private static final Duration FILE_TASK_TTL = Duration.ofHours(24);
-    private static final Duration AUDIT_EVENT_TTL = Duration.ofDays(7);
 
     private final LlmProxyService llmProxyService;
+    private final GatewayAuditRepository auditRepository;
     private final Map<String, GatewayFileTaskInfo> fileTasks = new ConcurrentHashMap<>();
     private final Map<String, Instant> fileTaskCreatedAt = new ConcurrentHashMap<>();
-    private final List<GatewayAuditEvent> auditEvents = new CopyOnWriteArrayList<>();
 
     @Override
     public GatewayResponse processChat(GatewayRequest request, GatewayInvocationContext invocationContext) {
@@ -61,7 +58,7 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
         GatewayRiskDecision riskDecision = buildRiskDecision(matchedTypes, provider.name(), llmResponse.isSuccess());
         GatewayAuditEvent auditEvent = buildAuditEvent(invocationContext, "CHAT", provider.name(), matchedTypes,
                 riskDecision, content, llmResponse.getDesensitizedResponse());
-        addAuditEvent(auditEvent);
+        auditRepository.save(auditEvent);
 
         Map<String, Object> data = new HashMap<>();
         data.put("provider", provider.name());
@@ -128,7 +125,7 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
                 .build();
         GatewayAuditEvent auditEvent = buildAuditEvent(invocationContext, "FILE_TASK", null, List.of(), riskDecision,
                 fileName, taskId);
-        addAuditEvent(auditEvent);
+        auditRepository.save(auditEvent);
 
         return buildGatewayResponse(invocationContext, true, "task accepted", taskInfo, riskDecision,
                 auditEvent.getEventId());
@@ -142,14 +139,7 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
 
     @Override
     public List<GatewayAuditEvent> queryAuditEvents(String appId, String userId, String decisionAction) {
-        cleanupAuditEvents();
-        EnumSet<GatewayDecisionAction> filterActions = resolveDecisionActions(decisionAction);
-        boolean hasActionFilter = decisionAction != null && !decisionAction.isBlank() && !filterActions.isEmpty();
-        return auditEvents.stream()
-                .filter(event -> appId == null || appId.isBlank() || appId.equals(event.getAppId()))
-                .filter(event -> userId == null || userId.isBlank() || userId.equals(event.getUserId()))
-                .filter(event -> !hasActionFilter || filterActions.contains(event.getDecisionAction()))
-                .collect(Collectors.toList());
+        return auditRepository.query(appId, userId, decisionAction, 200);
     }
 
     private LlmRequest buildLlmRequest(GatewayRequest request, String content, LlmProvider provider) {
@@ -255,26 +245,6 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
                 .build();
     }
 
-    private EnumSet<GatewayDecisionAction> resolveDecisionActions(String decisionAction) {
-        if (decisionAction == null || decisionAction.isBlank()) {
-            return EnumSet.noneOf(GatewayDecisionAction.class);
-        }
-
-        try {
-            return EnumSet.of(GatewayDecisionAction.valueOf(decisionAction.toUpperCase()));
-        } catch (IllegalArgumentException ex) {
-            return EnumSet.noneOf(GatewayDecisionAction.class);
-        }
-    }
-
-    private synchronized void addAuditEvent(GatewayAuditEvent auditEvent) {
-        cleanupAuditEvents();
-        auditEvents.add(auditEvent);
-        while (auditEvents.size() > MAX_AUDIT_EVENTS) {
-            auditEvents.remove(0);
-        }
-    }
-
     private void cleanupExpiredFileTasks() {
         Instant expireBefore = Instant.now().minus(FILE_TASK_TTL);
         fileTaskCreatedAt.entrySet().removeIf(entry -> {
@@ -297,14 +267,6 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
             }
             fileTasks.remove(oldestTaskId);
             fileTaskCreatedAt.remove(oldestTaskId);
-        }
-    }
-
-    private void cleanupAuditEvents() {
-        Instant expireBefore = Instant.now().minus(AUDIT_EVENT_TTL);
-        auditEvents.removeIf(event -> event.getTimestamp() != null && event.getTimestamp().isBefore(expireBefore));
-        while (auditEvents.size() > MAX_AUDIT_EVENTS) {
-            auditEvents.remove(0);
         }
     }
 

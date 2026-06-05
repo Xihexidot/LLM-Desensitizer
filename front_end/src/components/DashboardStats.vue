@@ -1,161 +1,118 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { Chart as ChartJS, ArcElement, Tooltip, Legend } from 'chart.js'
 import { Pie } from 'vue-chartjs'
+import { API_BASE_URL } from '../config'
 
 ChartJS.register(ArcElement, Tooltip, Legend)
 
-const props = defineProps({
-  detectedEntities: {
-    type: Array,
-    default: () => []
+const stats = ref({ todayTotal: 0, byChannel: [], byDecision: [] })
+const loading = ref(false)
+const error = ref('')
+let refreshTimer = null
+
+async function loadStats() {
+  loading.value = true
+  error.value = ''
+  try {
+    const res = await fetch(`${API_BASE_URL}/gateway/v1/audit/stats`)
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    stats.value = data
+  } catch (e) {
+    error.value = '加载失败: ' + e.message
+  } finally {
+    loading.value = false
   }
+}
+
+onMounted(() => {
+  loadStats()
+  refreshTimer = setInterval(loadStats, 15000)
 })
 
-const totalIntercepted = computed(() => props.detectedEntities.length)
+onUnmounted(() => {
+  if (refreshTimer) clearInterval(refreshTimer)
+})
 
-const chartData = computed(() => {
-  const counts = {}
-  props.detectedEntities.forEach(entity => {
-    const type = entity.type
-    counts[type] = (counts[type] || 0) + 1
-  })
+function channelCount(name) {
+  const item = stats.value.byChannel?.find(c => c.channel === name)
+  return item?.cnt ?? 0
+}
 
-  const labels = Object.keys(counts)
-  const data = Object.values(counts)
+function decisionCount(name) {
+  const item = stats.value.byDecision?.find(d => d.decision_action === name)
+  return item?.cnt ?? 0
+}
 
-  // 预定义一些颜色，对应常见的敏感类型
-  const colorMap = {
-    'PHONE': '#fbbf24',
-    'MOBILE_PHONE': '#fbbf24',
-    'PHONE_NUMBER': '#fbbf24',
-    'LANDLINE': '#f59e0b',
-    'EMAIL': '#3b82f6',
-    'ID_CARD': '#ef4444',
-    'BANK_CARD': '#10b981',
-    'ADDRESS': '#8b5cf6',
-    'LOCATION': '#8b5cf6',
-    'PLATE_NUMBER': '#ec4899',
-    'LICENSE_PLATE': '#ec4899',
-    'NAME': '#f97316',
-    'ORGANIZATION': '#06b6d4',
-    'COMPANY': '#06b6d4',
-    'DATE': '#64748b',
-    'PASSPORT': '#6366f1'
-  }
-  
-  const backgroundColors = labels.map(label => colorMap[label] || '#94a3b8')
+const totalIntercepted = ref(0)
 
-  return {
-    labels: labels,
-    datasets: [
-      {
-        backgroundColor: backgroundColors,
-        data: data
-      }
-    ]
-  }
+const chartData = ref({
+  labels: [],
+  datasets: [{ backgroundColor: [], data: [] }]
 })
 
 const chartOptions = {
   responsive: true,
   maintainAspectRatio: false,
-  plugins: {
-    legend: {
-      position: 'right',
-      labels: {
-        usePointStyle: true,
-        boxWidth: 10
-      }
-    }
-  }
+  plugins: { legend: { position: 'right', labels: { usePointStyle: true, boxWidth: 10 } } }
 }
 </script>
 
 <template>
-  <div class="dashboard-stats" v-if="totalIntercepted > 0">
-    <div class="stat-content">
-      <div class="stat-info">
-        <h3>🛡️ 安全拦截统计</h3>
-        <div class="big-number">{{ totalIntercepted }}</div>
-        <p class="stat-desc">本次会话拦截敏感信息</p>
+  <div class="dashboard-page">
+    <div class="dashboard-header">
+      <h2>安全仪表盘</h2>
+      <button class="btn-refresh" @click="loadStats" :disabled="loading">
+        {{ loading ? '刷新中...' : '刷新' }}
+      </button>
+    </div>
+
+    <div v-if="error" class="audit-error">{{ error }}</div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">今日拦截</div>
+        <div class="stat-value">{{ stats.todayTotal }}</div>
       </div>
-      <div class="chart-container">
-        <Pie :data="chartData" :options="chartOptions" />
+      <div class="stat-card">
+        <div class="stat-label">插件检测</div>
+        <div class="stat-value accent-blue">{{ channelCount('BROWSER_PLUGIN') }}</div>
       </div>
+      <div class="stat-card">
+        <div class="stat-label">API 调用</div>
+        <div class="stat-value accent-green">{{ channelCount('backend-api') }}</div>
+      </div>
+    </div>
+
+    <div v-if="stats.todayTotal === 0 && !loading" class="audit-empty">
+      暂无今日统计数据，开始使用插件或 API 即可产生数据。
     </div>
   </div>
 </template>
 
 <style scoped>
-.dashboard-stats {
-  width: 100%;
-  height: 100%;
+.dashboard-page { width: 100%; }
+.dashboard-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 20px;
 }
-
-.stat-content {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 100%;
-}
-
-.stat-card {
-  /* Removed old card styles as parent is now the card */
-}
-
-.stat-info {
-  flex: 1;
-  text-align: center;
-  padding-right: 20px;
-  border-right: 1px solid var(--border, #e2e8f0);
-}
-
-.stat-info h3 {
-  margin: 0;
-  font-size: 1rem;
-  color: #64748b;
-  font-weight: 600;
-}
-
-.big-number {
-  font-size: 3rem;
-  font-weight: 800;
-  color: #3b82f6;
-  margin: 10px 0;
-  line-height: 1;
-}
-
-.stat-desc {
-  margin: 0;
-  color: #94a3b8;
+.dashboard-header h2 { margin: 0; font-size: 1.4rem; color: var(--text); }
+.btn-refresh {
+  padding: 8px 20px; border: 1px solid var(--border); border-radius: 8px;
+  background: var(--btn-bg, #f1f5f9); color: var(--text); cursor: pointer;
   font-size: 0.9rem;
 }
-
-.chart-container {
-  flex: 1.5;
-  height: 160px;
-  position: relative;
-  padding-left: 10px;
-  display: flex;
-  justify-content: center;
+.btn-refresh:disabled { opacity: 0.5; cursor: not-allowed; }
+.stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+.stat-card {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: 12px; padding: 20px; text-align: center;
 }
-
-@media (max-width: 640px) {
-  .stat-content {
-    flex-direction: column;
-    gap: 20px;
-  }
-  
-  .stat-info {
-    border-right: none;
-    border-bottom: 1px solid var(--border, #e2e8f0);
-    padding-right: 0;
-    padding-bottom: 20px;
-    width: 100%;
-  }
-}
-
-:global(.dark) .stat-info h3 { color: #94a3b8; }
-:global(.dark) .big-number { color: #60a5fa; }
+.stat-label { font-size: 0.85rem; color: #64748b; margin-bottom: 8px; }
+.stat-value { font-size: 2.5rem; font-weight: 800; color: #3b82f6; }
+.stat-value.accent-blue { color: #6366f1; }
+.stat-value.accent-green { color: #10b981; }
+.audit-error { color: #ef4444; padding: 12px; background: #fef2f2; border-radius: 8px; margin-bottom: 12px; }
+.audit-empty { text-align: center; color: #94a3b8; padding: 40px 0; font-size: 1rem; }
 </style>

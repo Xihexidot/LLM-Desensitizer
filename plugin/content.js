@@ -79,6 +79,7 @@ async function reviewAndContinue({ input, trigger, content }) {
     }
 
     const result = response.result;
+    const auditEventId = result?.auditEventId;
     const detectedEntities = Array.isArray(result?.detectedEntities)
       ? result.detectedEntities
       : [];
@@ -96,12 +97,29 @@ async function reviewAndContinue({ input, trigger, content }) {
     });
 
     if (choice === "send") {
+      notifyConfirmAction(auditEventId, "DESENSITIZE_AND_SEND");
       continueSend({ input, trigger, content: desensitizedContent });
     } else if (choice === "send-original") {
+      notifyConfirmAction(auditEventId, "SEND_ORIGINAL");
       continueSend({ input, trigger, content });
+    } else {
+      notifyConfirmAction(auditEventId, "CANCEL");
     }
   } catch (error) {
     console.error("[AI 输入安全助手] 发送前检查失败", error);
+  }
+}
+
+function notifyConfirmAction(auditEventId, userAction) {
+  if (!auditEventId) return;
+  try {
+    chrome.runtime.sendMessage({
+      type: "confirm-action",
+      auditEventId,
+      userAction,
+    });
+  } catch {
+    // fire-and-forget
   }
 }
 

@@ -23,3 +23,29 @@ CREATE TABLE IF NOT EXISTS sensitive_dict (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uk_type_term (dict_type, term)
 );
+
+-- 网关审计事件表
+CREATE TABLE IF NOT EXISTS gateway_audit_event (
+    id          BIGINT AUTO_INCREMENT PRIMARY KEY,
+    event_id    VARCHAR(64)  NOT NULL UNIQUE,
+    timestamp   TIMESTAMP    NOT NULL,
+    tenant_id   VARCHAR(64),
+    app_id      VARCHAR(64),
+    user_id     VARCHAR(64),
+    department  VARCHAR(64),
+    channel     VARCHAR(32),
+    request_type VARCHAR(32),
+    target_provider VARCHAR(32),
+    scene_code  VARCHAR(32),
+    matched_sensitive_types VARCHAR(512),
+    decision_action VARCHAR(32),
+    input_risk_level  VARCHAR(16),
+    output_risk_level VARCHAR(16),
+    user_action  VARCHAR(32) COMMENT '插件侧用户确认: DESENSITIZE_AND_SEND|SEND_ORIGINAL|CANCEL|AUTO',
+    request_hash  VARCHAR(128),
+    response_hash VARCHAR(128),
+    created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_timestamp (timestamp),
+    INDEX idx_channel (channel)
+);

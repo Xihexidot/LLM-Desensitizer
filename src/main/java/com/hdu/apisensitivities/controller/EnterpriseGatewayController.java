@@ -7,6 +7,7 @@ import com.hdu.apisensitivities.entity.gateway.GatewayRequest;
 import com.hdu.apisensitivities.entity.gateway.GatewayResponse;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskDecision;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskLevel;
+import com.hdu.apisensitivities.repository.GatewayAuditRepository;
 import com.hdu.apisensitivities.service.gateway.EnterpriseGatewayApplicationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,7 @@ import java.util.Map;
 public class EnterpriseGatewayController {
 
         private final EnterpriseGatewayApplicationService enterpriseGatewayApplicationService;
+        private final GatewayAuditRepository auditRepository;
 
         @PostMapping("/chat")
         public ResponseEntity<GatewayResponse> chat(
@@ -126,6 +128,11 @@ public class EnterpriseGatewayController {
                                                 .decisionAction(null)
                                                 .build())
                                 .build());
+        }
+
+        @GetMapping("/audit/stats")
+        public ResponseEntity<Map<String, Object>> getAuditStats() {
+                return ResponseEntity.ok(auditRepository.getStats());
         }
 
         private GatewayInvocationContext buildInvocationContext(String authorization, String appId, String requestId,
