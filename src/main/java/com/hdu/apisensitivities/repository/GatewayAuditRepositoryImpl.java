@@ -162,6 +162,7 @@ public class GatewayAuditRepositoryImpl implements GatewayAuditRepository {
                     .decisionAction(da != null ? GatewayDecisionAction.valueOf(da) : null)
                     .inputRiskLevel(irl != null ? GatewayRiskLevel.valueOf(irl) : null)
                     .outputRiskLevel(orl != null ? GatewayRiskLevel.valueOf(orl) : null)
+                    .userAction(rs.getString("user_action"))
                     .build();
         }
     }

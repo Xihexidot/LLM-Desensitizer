@@ -30,6 +30,7 @@ public class GatewayAuditEvent {
     private String policyVersion;
     private GatewayRiskLevel inputRiskLevel;
     private GatewayRiskLevel outputRiskLevel;
+    private String userAction;
     private String requestHash;
     private String responseHash;
 }

@@ -112,15 +112,35 @@ async function reviewAndContinue({ input, trigger, content }) {
 
 function notifyConfirmAction(auditEventId, userAction) {
   if (!auditEventId) return;
+  const CONFIRM_API_URL = "http://127.0.0.1:8080/plugin/confirm-action";
   try {
-    chrome.runtime.sendMessage({
-      type: "confirm-action",
-      auditEventId,
-      userAction,
-    });
+    fetch(CONFIRM_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auditEventId, userAction }),
+    }).catch(() => {});
+    showActionToast(userAction);
   } catch {
     // fire-and-forget
   }
+}
+
+function showActionToast(userAction) {
+  const labels = {
+    DESENSITIZE_AND_SEND: '已选择发送脱敏内容',
+    SEND_ORIGINAL: '已选择发送原文',
+    CANCEL: '已取消发送',
+  };
+  const msg = labels[userAction] || userAction;
+  const toast = document.createElement('div');
+  toast.textContent = `[AI安全助手] ${msg}`;
+  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1e293b;color:#f1f5f9;padding:10px 20px;border-radius:8px;z-index:2147483647;font-size:14px;font-family:sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);opacity:0;transition:opacity 0.3s;pointer-events:none';
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => { toast.style.opacity = '1'; });
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, 2500);
 }
 
 function continueSend({ input, trigger, content }) {

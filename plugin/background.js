@@ -1,5 +1,6 @@
 const REVIEW_API_URL = "http://127.0.0.1:8080/plugin/audit-check";
-const CONFIRM_API_URL = "http://127.0.0.1:8080/plugin/confirm-action";
+const STORAGE_KEY_USER_ID = "ai-guard-user-id";
+const STORAGE_KEY_DEPT = "ai-guard-dept";
 
 chrome.runtime.onInstalled.addListener(() => {
   console.log("[AI 输入安全助手] 已安装，启用发送前输入检查");
@@ -23,6 +24,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 async function reviewInput(payload) {
+  const userId = await getUserId();
+  const department = await getDept();
+
   const response = await fetch(REVIEW_API_URL, {
     method: "POST",
     headers: {
@@ -33,8 +37,8 @@ async function reviewInput(payload) {
       content: payload?.content ?? "",
       dataType: "TEXT",
       language: payload?.language ?? "zh",
-      userId: payload?.userId ?? getUserId(),
-      department: payload?.department ?? getDept(),
+      userId: payload?.userId ?? userId,
+      department: payload?.department ?? department,
       strictMode: false,
       autoScenarioDetection: false,
     }),
@@ -47,45 +51,25 @@ async function reviewInput(payload) {
   return response.json();
 }
 
-// ========== 用户身份管理 ==========
+// ========== 用户身份管理（Manifest V3 → chrome.storage.local）==========
 
-function getUserId() {
+async function getUserId() {
   try {
-    const val = localStorage.getItem("ai-guard-user-id");
-    if (val) return val;
+    const result = await chrome.storage.local.get(STORAGE_KEY_USER_ID);
+    if (result[STORAGE_KEY_USER_ID]) return result[STORAGE_KEY_USER_ID];
     const id = "user-" + Date.now().toString(36);
-    localStorage.setItem("ai-guard-user-id", id);
+    await chrome.storage.local.set({ [STORAGE_KEY_USER_ID]: id });
     return id;
   } catch {
     return "unknown";
   }
 }
 
-function getDept() {
+async function getDept() {
   try {
-    const val = localStorage.getItem("ai-guard-dept");
-    return val || "";
+    const result = await chrome.storage.local.get(STORAGE_KEY_DEPT);
+    return result[STORAGE_KEY_DEPT] || "";
   } catch {
     return "";
   }
 }
-
-// 后台通过 runtime message 支持 { type: "confirm-action" } 调用
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message?.type !== "confirm-action") {
-    return false;
-  }
-
-  fetch(CONFIRM_API_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      auditEventId: message.auditEventId,
-      userAction: message.userAction,
-    }),
-  })
-    .then(() => sendResponse({ ok: true }))
-    .catch((error) => sendResponse({ ok: false, error: error.message }));
-
-  return true;
-});
