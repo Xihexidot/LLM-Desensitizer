@@ -113,11 +113,30 @@ public class DesensitizationManager {
         return dataParserManager.parseData(request);
     }
 
+    /**
+     * 非高敏类型（默认关闭，需显式开启）。
+     * 这些类型由 NLP 引擎检测，在企业场景下误报率高、对语义干扰大，
+     * 仅在国企/政府/合规要求严格的场景下按需开启。
+     */
+    private static final Set<String> LOW_PRIORITY_TYPES = Set.of(
+            SensitiveType.PERSON.name(),
+            SensitiveType.ADDRESS.name(),
+            SensitiveType.ORGANIZATION.name());
+
     private ScenarioAnalysisResult prepareDetectionScopeForCurrentMode(DesensitizationRequest request) {
-        // 当前项目默认关闭情景感知，统一放开检测范围，便于规则匹配和回归测试。
-        request.setIncludeTypes(null);
+        // 用户显式指定了检测类型 → 尊重用户选择
+        if (request.getIncludeTypes() != null && !request.getIncludeTypes().isEmpty()) {
+            return null;
+        }
+        // 默认：检测所有类型，但排除 NLP 类高误报类型（人名/地址/机构）。
+        // 国企/政府场景可通过请求参数 includeTypes 显式加入。
+        Set<String> defaultTypes = new HashSet<>(Arrays.stream(SensitiveType.values())
+                .map(Enum::name)
+                .filter(t -> !LOW_PRIORITY_TYPES.contains(t))
+                .collect(Collectors.toSet()));
+        request.setIncludeTypes(defaultTypes);
         request.setStrictMode(false);
-        log.info("情景感知已完全禁用，将检测所有敏感类型，严格模式关闭");
+        log.info("默认检测范围已设置（排除PERSON/ADDRESS/ORGANIZATION），可通过includeTypes参数自定义");
         return null;
     }
 
