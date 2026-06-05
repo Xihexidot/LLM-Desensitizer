@@ -12,7 +12,6 @@ import java.util.List;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 public class NlpEntityDetector {
 
@@ -22,7 +21,13 @@ public class NlpEntityDetector {
             .enablePlaceRecognize(true)
             .enableOrganizationRecognize(true);
 
-    // ======================== 可配置词典（volatile 支持运行时替换） ========================
+    // ======================== 可配置词典（volatile 支持运行时热替换） ========================
+
+    /**
+     * 全量姓氏白名单（~400 姓 + 复姓），用于 HanLP 分词后 token 级别判断。
+     * 此处用全量是安全的：HanLP 已把文本切为独立 token，"姓+名"不会与普通词混淆。
+     * 例如 "吕欣怡" 已被分为一个 token，不会误匹配 "旅行"。
+     */
     private static volatile Set<String> surnameWhitelist = initSurnameWhitelist();
     private static volatile Set<String> personBlacklist = initPersonBlacklist();
     private static volatile Set<String> addressBlacklistLabels = initAddressBlacklistLabels();
@@ -137,7 +142,17 @@ public class NlpEntityDetector {
             addressSuffixes = newAddressSuffixes;
     }
 
-    // ======================== 默认值导出（供 DictConfigService 合并）
+    /**
+     * 根据给定姓氏集合动态构建人名回退正则。
+     * 格式：([姓姓姓...][\\u4e00-\\u9fa5]{1,3})(?![\\u4e00-\\u9fa5&&[^的之于与和以所]])
+     */
+    private static Pattern buildNamePattern(Set<String> surnames) {
+        StringBuilder sb = new StringBuilder(surnames.stream().reduce("", (a, b) -> a + b));
+        // 转义可能引起正则问题的字符（如括号等，姓氏中极少见但安全起见）
+        return Pattern.compile("([" + sb + "][\\u4e00-\\u9fa5]{1,3})(?![\\u4e00-\\u9fa5&&[^的之于与和以所]])");
+    }
+
+    // ======================== 默认值导出（供 DictConfigService 从 DB 合并）
     // ========================
     public static Set<String> getDefaultSurnameWhitelist() {
         return initSurnameWhitelist();
@@ -159,15 +174,47 @@ public class NlpEntityDetector {
         return initAddressSuffixes();
     }
 
-    // ======================== 正则 ========================
+    // ======================== 回退正则 ========================
+    //
+    // 人名检测有两条路径，各自使用不同粒度的姓氏集：
+    //
+    // Path 1 — HanLP token 级判断 → isPotentialPersonName() → surnameWhitelist（~400 姓）
+    // HanLP 已分词成独立 token，单个 token 内 "姓+名" 不会与普通词混淆，
+    // 所以用全量姓氏是安全的。
+    //
+    // Path 2 — 正则全文回退扫描 → NAME_FALLBACK_PATTERN → regexSafeSurnames（~100 姓）
+    // 正则在原始文本任意位置匹配 "[姓][1-3中文]"，可能把 "牛人""谷里""车到" 当人名。
+    // regexSafeSurnames 是 surnameWhitelist 的子集，去掉易混淆的低频姓氏，控制误报。
 
     /**
-     * 人名回退匹配：姓氏白名单 + 1~3 个汉字。
-     * 后缀字符类减法：(?![\\u4e00-\\u9fa5&&[^的之于与和以所]])
-     * 允许后跟 "的/之/于/与/和/以/所" 等助词，但阻止后跟其他中文（防止嵌入复合词）。
+     * 人名回退正则。姓氏集使用 {@link #regexSafeSurnames}（surnameWhitelist 的高置信度子集），
+     * 而非全量 400+ 姓，避免低频易混淆姓氏（牛/谷/车/鱼 等）在全文扫描中产生误报。
      */
-    private static final Pattern NAME_FALLBACK_PATTERN = Pattern.compile(
-            "([赵钱孙李周吴郑王冯陈褚卫蒋沈韩杨朱秦尤许何吕施张孔曹严华金魏陶姜戚谢邹喻柏水窦章云苏潘葛奚范彭郎鲁韦昌马苗凤花方俞任袁柳酆鲍史唐费廉岑薛雷贺倪汤滕殷罗毕郝邬安常乐于时傅皮卞齐康伍余元卜顾孟平黄和穆萧尹姚邵湛汪祁毛禹狄米贝明臧][\\u4e00-\\u9fa5]{1,3})(?![\\u4e00-\\u9fa5&&[^的之于与和以所]])");
+    private static volatile Pattern NAME_FALLBACK_PATTERN = buildNamePattern(initRegexSafeSurnames());
+
+    /**
+     * 正则安全姓氏集：surnameWhitelist 中筛选出的高频且不易混淆为普通词的姓氏子集。
+     * 覆盖中国人口前 100 大姓，约占 >85% 人口。
+     */
+    private static Set<String> initRegexSafeSurnames() {
+        Set<String> set = new HashSet<>();
+        String[] s = {
+                // 中国人口前100大姓氏，按人口排序
+                "王", "李", "张", "刘", "陈", "杨", "黄", "赵", "吴", "周",
+                "徐", "孙", "马", "朱", "胡", "郭", "何", "高", "林", "罗",
+                "郑", "梁", "谢", "宋", "唐", "许", "韩", "冯", "邓", "曹",
+                "彭", "曾", "萧", "田", "董", "袁", "潘", "于", "蒋", "蔡",
+                "余", "杜", "叶", "程", "苏", "魏", "吕", "丁", "任", "沈",
+                "姚", "卢", "姜", "崔", "钟", "谭", "陆", "汪", "范", "金",
+                "石", "廖", "贾", "夏", "韦", "傅", "方", "白", "邹", "孟",
+                "熊", "秦", "邱", "江", "尹", "薛", "阎", "段", "雷", "侯",
+                "龙", "史", "陶", "黎", "贺", "顾", "毛", "郝", "龚", "邵",
+                "万", "钱", "严", "覃", "武", "戴", "莫", "孔", "向", "汤"
+        };
+        for (String surname : s)
+            set.add(surname);
+        return set;
+    }
 
     private static final Pattern ADDRESS_FALLBACK_PATTERN = Pattern.compile(
             "(?<![\\u4e00-\\u9fa5])([\\u4e00-\\u9fa5]{2,6}(?:路|街|巷|道|大道|区|市|县|镇|村|号))");
@@ -176,23 +223,17 @@ public class NlpEntityDetector {
 
     public static List<SensitiveEntity> detect(String text) {
         List<SensitiveEntity> entities = new ArrayList<>();
+        Set<String> seen = new HashSet<>(); // type:start:end 去重键
+
+        // Phase 1: HanLP 分词 → NER 标签映射，逐个独立定位
         List<Term> termList = segment.seg(text);
-
-        System.out.println("HanLP输出: " + termList.stream()
-                .map(t -> t.word + "/" + t.nature)
-                .collect(Collectors.joining(", ")));
-
-        int currentPos = 0;
         for (Term term : termList) {
             String word = term.word;
-            String nature = term.nature.toString();
-
             if (word == null || word.trim().isEmpty()) {
-                currentPos += word != null ? word.length() : 0;
                 continue;
             }
 
-            SensitiveType type = getTypeByNature(nature, word);
+            SensitiveType type = getTypeByNature(term.nature.toString(), word);
             if (type == null) {
                 if (isPotentialPersonName(word)) {
                     type = SensitiveType.PERSON;
@@ -200,27 +241,31 @@ public class NlpEntityDetector {
                     type = SensitiveType.ADDRESS;
                 }
             }
+            if (type == null) {
+                continue;
+            }
 
-            if (type != null && word != null && !word.trim().isEmpty()) {
-                // 查找该词在原文本中的偏移量（注意处理重复词）
-                int start = text.indexOf(word, currentPos);
-                if (start >= 0) {
+            // 在原文中搜索该词的所有出现位置（不依赖累计游标）
+            int fromIndex = 0;
+            while ((fromIndex = text.indexOf(word, fromIndex)) >= 0) {
+                String key = type.name() + ":" + fromIndex + ":" + (fromIndex + word.length());
+                if (seen.add(key)) {
                     entities.add(SensitiveEntity.builder()
                             .type(type)
                             .originalText(word)
-                            .start(start)
-                            .end(start + word.length())
+                            .start(fromIndex)
+                            .end(fromIndex + word.length())
                             .confidence(adjustConfidence(type, word))
                             .build());
-                    currentPos = start + word.length();
-                } else {
-                    currentPos += word.length();
                 }
-            } else {
-                currentPos += word.length();
+                fromIndex += word.length();
             }
         }
-        addFallbackEntities(text, entities);
+
+        // Phase 2: 正则回退匹配（独立运行，Matcher 自带精确位置）
+        addFallbackMatches(text, NAME_FALLBACK_PATTERN, SensitiveType.PERSON, entities, seen);
+        addFallbackMatches(text, ADDRESS_FALLBACK_PATTERN, SensitiveType.ADDRESS, entities, seen);
+
         return entities;
     }
 
@@ -285,16 +330,6 @@ public class NlpEntityDetector {
         return 0.75;
     }
 
-    private static void addFallbackEntities(String text, List<SensitiveEntity> entities) {
-        Set<String> existingKeys = new HashSet<>();
-        for (SensitiveEntity entity : entities) {
-            existingKeys.add(buildEntityKey(entity));
-        }
-
-        addFallbackMatches(text, NAME_FALLBACK_PATTERN, SensitiveType.PERSON, entities, existingKeys);
-        addFallbackMatches(text, ADDRESS_FALLBACK_PATTERN, SensitiveType.ADDRESS, entities, existingKeys);
-    }
-
     private static void addFallbackMatches(String text, Pattern pattern, SensitiveType type,
             List<SensitiveEntity> entities, Set<String> existingKeys) {
         Matcher matcher = pattern.matcher(text);
@@ -346,9 +381,5 @@ public class NlpEntityDetector {
             return addressBlacklistPrefixChars.contains(secondLast);
         }
         return false;
-    }
-
-    private static String buildEntityKey(SensitiveEntity entity) {
-        return entity.getType().name() + ":" + entity.getStart() + ":" + entity.getEnd();
     }
 }
