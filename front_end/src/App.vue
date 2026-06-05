@@ -8,8 +8,8 @@
   import AuditList from "./components/AuditList.vue";
   import { API_BASE_URL } from "./config";
 
-  // 视图控制
-  const currentView = ref("home");
+  // 视图控制 — 默认首页为仪表盘
+  const currentView = ref("dashboard");
   const initialRuleTab = ref("add");
 
   function showRules(tab) {
@@ -31,6 +31,10 @@
 
   function showDict() {
     currentView.value = "dict";
+  }
+
+  function showTool() {
+    currentView.value = "tool";
   }
 
   // 健康检查
@@ -180,32 +184,15 @@
       @show-dashboard="showDashboard"
       @show-audit="showAudit"
       @show-dict="showDict"
+      @show-tool="showTool"
     />
     <div class="content">
       <header class="header">
-        <h1>ApiSenstivities 脱敏工具</h1>
-        <p>敏感信息检测、脱敏和LLM代理</p>
+        <h1>AI 安全网关管理控制台</h1>
+        <p>LLM API 敏感信息检测 · 脱敏 · 审计</p>
       </header>
 
       <main class="main">
-        <div
-          v-if="currentView === 'home'"
-          class="card full-width"
-          id="section-llm"
-        >
-          <LlmDesensitization
-            @conversation-completed="saveConversation"
-            :scenario-settings="scenarioSettings"
-          />
-        </div>
-
-        <div
-          v-if="currentView === 'rules'"
-          class="card full-width"
-        >
-          <SensitiveRules :initial-tab="initialRuleTab" />
-        </div>
-
         <div
           v-if="currentView === 'dashboard'"
           class="card full-width"
@@ -218,6 +205,24 @@
           class="card full-width"
         >
           <AuditList />
+        </div>
+
+        <div
+          v-if="currentView === 'rules'"
+          class="card full-width"
+        >
+          <SensitiveRules :initial-tab="initialRuleTab" />
+        </div>
+
+        <div
+          v-if="currentView === 'tool' || currentView === 'home'"
+          class="card full-width"
+          id="section-llm"
+        >
+          <LlmDesensitization
+            @conversation-completed="saveConversation"
+            :scenario-settings="scenarioSettings"
+          />
         </div>
 
         <div

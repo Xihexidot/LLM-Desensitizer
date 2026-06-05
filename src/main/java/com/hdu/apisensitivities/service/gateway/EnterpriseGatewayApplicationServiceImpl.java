@@ -221,6 +221,8 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
                 .policyVersion(riskDecision.getPolicyVersion())
                 .inputRiskLevel(riskDecision.getRiskLevel())
                 .outputRiskLevel(riskDecision.getRiskLevel())
+                .originalContent(requestPayload)
+                .processedContent(responsePayload)
                 .requestHash(hashPayload(requestPayload))
                 .responseHash(hashPayload(responsePayload))
                 .build();

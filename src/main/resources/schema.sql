@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS gateway_audit_event (
     input_risk_level  VARCHAR(16),
     output_risk_level VARCHAR(16),
     user_action  VARCHAR(32) COMMENT '插件侧用户确认: DESENSITIZE_AND_SEND|SEND_ORIGINAL|CANCEL|AUTO',
+    original_content TEXT COMMENT '原始输入内容（供安全审计审查）',
+    processed_content TEXT COMMENT '脱敏后内容',
     request_hash  VARCHAR(128),
     response_hash VARCHAR(128),
     created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

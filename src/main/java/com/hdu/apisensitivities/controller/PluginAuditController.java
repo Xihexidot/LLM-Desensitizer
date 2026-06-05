@@ -67,6 +67,8 @@ public class PluginAuditController {
                         : GatewayDecisionAction.DESENSITIZE_AND_ALLOW)
                 .inputRiskLevel(riskLevel)
                 .outputRiskLevel(GatewayRiskLevel.NONE)
+                .originalContent(req.getContent())
+                .processedContent(result.getDesensitizedContent())
                 .requestHash(hash(req.getContent()))
                 .build();
         auditRepository.save(event);
