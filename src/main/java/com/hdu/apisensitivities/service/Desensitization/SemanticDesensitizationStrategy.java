@@ -4,6 +4,7 @@ import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -12,6 +13,9 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 public class SemanticDesensitizationStrategy implements DesensitizationStrategy {
+
+    @Autowired
+    private GlobalSessionContextRepository contextRepository;
 
     private final Map<SensitiveType, List<String>> SEMANTIC_REPLACEMENTS = new HashMap<>();
 
@@ -49,7 +53,8 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
 
         // 过滤掉没有正确位置信息的实体（例如来自结构化数据的实体）
         List<SensitiveEntity> validEntities = sensitiveEntities.stream()
-                .filter(entity -> entity.getStart() >= 0 && entity.getEnd() <= text.length() && entity.getStart() <= entity.getEnd())
+                .filter(entity -> entity.getStart() >= 0 && entity.getEnd() <= text.length()
+                        && entity.getStart() <= entity.getEnd())
                 .sorted((e1, e2) -> Integer.compare(e2.getStart(), e1.getStart()))
                 .collect(Collectors.toList());
 
@@ -58,20 +63,26 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
         }
 
         String result = text;
-        Random random = new Random();
+        String sessionId = DesensitizeRequestContext.getSessionId();
         for (SensitiveEntity entity : validEntities) {
             try {
-                List<String> replacements = SEMANTIC_REPLACEMENTS.getOrDefault(entity.getType(), 
-                        Arrays.asList("敏感信息", "隐私数据"));
-                String replacement = replacements.get(random.nextInt(replacements.size()));
-                
-                // 确保索引不越界
+                String originalText = entity.getOriginalText();
+                String typeStr = entity.getType().name();
+                SensitiveType type = entity.getType();
+
+                String replacement = contextRepository.getOrCreateConsistencyValue(sessionId, originalText, typeStr,
+                        currentId -> {
+                            List<String> pool = SEMANTIC_REPLACEMENTS.getOrDefault(type,
+                                    Arrays.asList("敏感信息", "隐私数据"));
+                            // 用 originalText.hashCode() 替代 Random，同实体→同词
+                            int idx = Math.abs(originalText.hashCode()) % pool.size();
+                            return "[" + pool.get(idx) + "_" + currentId + "]";
+                        });
+
                 int start = Math.max(0, entity.getStart());
                 int end = Math.min(text.length(), entity.getEnd());
                 if (start <= end) {
-                    result = result.substring(0, start) +
-                            "[" + replacement + "]" +
-                            result.substring(end);
+                    result = result.substring(0, start) + replacement + result.substring(end);
                 }
             } catch (StringIndexOutOfBoundsException e) {
                 log.warn("脱敏过程中出现索引越界，实体: {}, 文本长度: {}", entity, text.length());
@@ -83,7 +94,8 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
     }
 
     @Override
-    public Map<String, Object> desensitizeStructuredData(Map<String, Object> structuredData, List<SensitiveEntity> sensitiveEntities) {
+    public Map<String, Object> desensitizeStructuredData(Map<String, Object> structuredData,
+            List<SensitiveEntity> sensitiveEntities) {
         if (structuredData == null) {
             return null;
         }
@@ -103,20 +115,15 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
             }
         }
 
-        Random random = new Random();
         // 按字段路径处理
         for (SensitiveEntity entity : pathEntities) {
-            List<String> replacements = SEMANTIC_REPLACEMENTS.getOrDefault(entity.getType(), 
-                    Arrays.asList("敏感信息", "隐私数据"));
-            String replacement = replacements.get(random.nextInt(replacements.size()));
+            String replacement = pickReplacement(entity);
             dataMap = replaceFieldInMap(dataMap, entity, replacement);
         }
 
         // 按值进行深度遍历处理
         for (SensitiveEntity entity : nonPathEntities) {
-            List<String> replacements = SEMANTIC_REPLACEMENTS.getOrDefault(entity.getType(), 
-                    Arrays.asList("敏感信息", "隐私数据"));
-            String replacement = replacements.get(random.nextInt(replacements.size()));
+            String replacement = pickReplacement(entity);
             dataMap = deepReplaceMap(dataMap, entity, replacement);
         }
 
@@ -160,8 +167,19 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
                 SensitiveType.PASSWORD,
                 SensitiveType.BIRTH_DATE,
                 SensitiveType.CUSTOM,
-                SensitiveType.IP_ADDRESS
-        ));
+                SensitiveType.IP_ADDRESS));
+    }
+
+    /**
+     * 为结构化数据路径使用的确定性选词。
+     * 基于 originalText.hashCode() 从词库中固定选取，同实体→同词。
+     */
+    private String pickReplacement(SensitiveEntity entity) {
+        List<String> pool = SEMANTIC_REPLACEMENTS.getOrDefault(entity.getType(),
+                Arrays.asList("敏感信息", "隐私数据"));
+        String text = entity.getOriginalText() != null ? entity.getOriginalText() : "";
+        int idx = Math.abs(text.hashCode()) % pool.size();
+        return pool.get(idx);
     }
 
     // 按字段路径对Map中的字段进行替换处理
@@ -180,7 +198,8 @@ public class SemanticDesensitizationStrategy implements DesensitizationStrategy 
     }
 
     // 递归处理字段路径替换
-    private Map<String, Object> processReplaceFieldPath(Map<String, Object> map, String[] pathParts, int index, String replacement) {
+    private Map<String, Object> processReplaceFieldPath(Map<String, Object> map, String[] pathParts, int index,
+            String replacement) {
         if (index >= pathParts.length) {
             return map;
         }
