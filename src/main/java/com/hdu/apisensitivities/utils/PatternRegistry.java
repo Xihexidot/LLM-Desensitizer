@@ -11,36 +11,47 @@ public class PatternRegistry {
         private static final Map<SensitiveType, Pattern> PATTERN_MAP = new HashMap<>();
 
         static {
-                // 1. 手机号：增加前后的数字断言，防止从身份证号中截取
-                // 兼容空格/横杠：138-1234-5678 或 138 1234 5678
+                // 1. 手机号 + 座机号
+                // 手机：兼容空格/横杠：138-1234-5678 或 138 1234 5678
+                // 座机：010-12345678、021-87654321、0755-12345678（区号3-4位 + 号码7-8位）
                 PATTERN_MAP.put(SensitiveType.PHONE_NUMBER,
-                                Pattern.compile("(?<!\\d)(?:\\+86)?1[3-9]\\d{1}([\\s-]?\\d{4}){2}(?!\\d)"));
+                                Pattern.compile("(?<!\\d)(?:(?:\\+86)?1[3-9]\\d{1}([\\s-]?\\d{4}){2}|0\\d{2,3}[\\s-]?\\d{7,8})(?!\\d)"));
 
                 // 2. 邮箱：优化结尾匹配，防止截断，并确保后缀完整性
                 PATTERN_MAP.put(SensitiveType.EMAIL,
                                 Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}(?:\\.[A-Za-z]{2,})?"));
 
-                // 3. 银行卡号：强制要求 13-19 位，且前后不能有数字
-                // 银行卡误报率高，必须排除掉可能的身份证号（身份证是18位且含校验码）
-
-                // 组成部分 正则 含义
-                // 负向后顾 (?<!\d) 前面不能是数字
-                // 首字符 [1-9] 第一位必须是1-9（不能是0）
-                // 后续数字 \d{12,18} 后面跟12-18个数字
-                // 负向前瞻 (?!\d) 后面不能是数字
-
+                // 3. 银行卡号：13-19 位纯数字（或含空格/横杠），前后不能有数字
+                // 策略：先匹配连续 13-19 位数字，或带分隔符的 4 位组格式
                 PATTERN_MAP.put(SensitiveType.BANK_CARD,
-                                Pattern.compile("(?<!\\d)[1-9]\\d{3}(?:[\\s-]?\\d{4}){2,3}(?!\\d)"));
+                                Pattern.compile("(?<!\\d)[1-9](?:\\d{12,18}|\\d{3}(?:[\\s-]?\\d{4}){2,3}[\\s-]?\\d{0,4})(?!\\d)"));
 
                 // 4. 身份证号：严格 18 位格式锁定
                 PATTERN_MAP.put(SensitiveType.ID_CARD,
                                 Pattern.compile("(?<!\\d)[1-9]\\d{5}\\s*(?:18|19|20)\\d{2}\\s*(?:0[1-9]|1[0-2])\\s*(?:0[1-9]|[12]\\d|3[01])\\s*\\d{3}[0-9Xx](?!\\d)"));
 
-                // 5. 密码
-                // 逻辑：必须包含字母，长度 8-20，且前后不能紧跟字母数字符号
-                // 这样 6222028260688877 这种纯数字就不会被识别为 PASSWORD
+                // 5. 密码 / 密钥（扩展字符类覆盖常见特殊符号，必须同时包含字母和数字，长度 8-64）
                 PATTERN_MAP.put(SensitiveType.PASSWORD,
-                                Pattern.compile("(?<![A-Za-z0-9])(?=.*[A-Za-z])(?=.*\\d)[A-Za-z\\d@$!%*#?&]{8,20}(?![A-Za-z0-9])"));
+                                Pattern.compile("(?<![A-Za-z0-9])(?=[A-Za-z\\d@$!%*#?&\\-_/+.]{0,63}[A-Za-z])(?=[A-Za-z\\d@$!%*#?&\\-_/+.]{0,63}\\d)[A-Za-z\\d@$!%*#?&\\-_/+.]{8,64}(?![A-Za-z0-9])"));
+
+                // 5b. API 密钥 / Token：特定前缀模式
+                // 覆盖 OpenAI(sk-/pk-)、AWS AKIA/ASIA、Google AIza 等常见格式
+                PATTERN_MAP.put(SensitiveType.API_KEY,
+                                Pattern.compile(
+                                                // OpenAI / 类OpenAI: sk-xxx, pk-xxx (至少20位)
+                                                "(?<![A-Za-z0-9])(?i)(sk|pk|ak)-[A-Za-z0-9_\\-]{20,}(?![A-Za-z0-9])" +
+                                                                "|" +
+                                                                // AWS Access Key ID: AKIA + 16位大写字母数字
+                                                                "AKIA[A-Z0-9]{16}" +
+                                                                "|" +
+                                                                // AWS Temporary Access Key: ASIA + 16位
+                                                                "ASIA[A-Z0-9]{16}" +
+                                                                "|" +
+                                                                // Google API Key: AIza + 35位
+                                                                "AIza[A-Za-z0-9_\\-]{35}" +
+                                                                "|" +
+                                                                // JWT Token: 三段式 base64url (header.payload.signature)
+                                                                "(?<![A-Za-z0-9_\\-.])[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+(?![A-Za-z0-9_\\-.])"));
 
                 // 6. 护照
                 PATTERN_MAP.put(SensitiveType.PASSPORT,
@@ -59,22 +70,21 @@ public class PatternRegistry {
 
                 // IP地址（IPv4 与常见 IPv6 表达）
                 PATTERN_MAP.put(SensitiveType.IP_ADDRESS,
-                        Pattern.compile(
-                                        "\\b(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\b"
-                                                        + "|" +
-                                                        "(?:(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,4}:){1,7}:|:(?::[A-Fa-f0-9]{1,4}){1,7})"
-                        )
-                );
-                // 车牌号（普通与新能源，更加宽松兼容实际文本）
+                                Pattern.compile(
+                                                "\\b(?:(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\.){3}(?:25[0-5]|2[0-4]\\d|1\\d\\d|[1-9]?\\d)\\b"
+                                                                + "|" +
+                                                                "(?:(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,4}:){1,7}:|:(?::[A-Fa-f0-9]{1,4}){1,7})"));
+                // 车牌号（普通与新能源，兼容·分隔符如京A·88888、京A·D12345）
                 PATTERN_MAP.put(SensitiveType.LICENSE_PLATE,
-                    Pattern.compile(
-                        "(?<![A-Z0-9])" +  // 前面不是字母数字
-                        "[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙闽藏青川宁琼使领]" +
-                        "[A-Z]" +
-                        "[A-Z0-9]{5,6}" +  // 关键修改：5-6位，支持新能源6位
-                        "(?![A-Z0-9])"     // 后面不是字母数字
-                    )
-                );
+                                Pattern.compile(
+                                                "(?<![A-Z0-9])" + // 前面不是字母数字
+                                                                "[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙闽藏青川宁琼使领]" +
+                                                                "[A-Z]" +
+                                                                "[·]?" + // 可选分隔符
+                                                                "[A-Z]?" + // 可选的新能源标识字母
+                                                                "[A-Z0-9]{5,6}" + // 5-6位
+                                                                "(?![A-Z0-9])" // 后面不是字母数字
+                                ));
         }
 
         public static Pattern getPattern(SensitiveType type) {

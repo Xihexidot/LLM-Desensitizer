@@ -32,7 +32,7 @@ public class EntityMerger {
             String nextPath = next.getMetadata() == null ? null : (String) next.getMetadata().get("fieldPath");
             boolean hasDifferentFieldPaths = currentPath != null && nextPath != null && !currentPath.equals(nextPath);
 
-            if (hasDifferentFieldPaths || current.getEnd() <= next.getStart()) {
+            if (hasDifferentFieldPaths || current.getEnd() < next.getStart()) {
                 merged.add(current);
                 current = next;
                 continue;

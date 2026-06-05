@@ -262,6 +262,17 @@ public class DesensitizationManager {
     }
 
     private boolean preferCandidateOverExisting(SensitiveEntity existing, SensitiveEntity candidate) {
+        // 地址内包含的 PERSON/ORG 碎片：当 ADDRESS 跨度 >= 3 倍时，抑制内部碎片
+        if (isAddressEnclosingFragment(existing, candidate) || isAddressEnclosingFragment(candidate, existing)) {
+            SensitiveEntity addr = existing.getType() == SensitiveType.ADDRESS ? existing : candidate;
+            SensitiveEntity frag = addr == existing ? candidate : existing;
+            int addrSpan = addr.getEnd() - addr.getStart();
+            int fragSpan = frag.getEnd() - frag.getStart();
+            if (addrSpan >= fragSpan * 3) {
+                return existing.getType() != SensitiveType.ADDRESS;
+            }
+        }
+
         int typeCmp = typeSpecificityScore(candidate.getType()) - typeSpecificityScore(existing.getType());
         if (typeCmp != 0) {
             return typeCmp > 0;
@@ -281,14 +292,20 @@ public class DesensitizationManager {
         return sensitiveTypePriority(candidate.getType()) > sensitiveTypePriority(existing.getType());
     }
 
+    private boolean isAddressEnclosingFragment(SensitiveEntity a, SensitiveEntity b) {
+        return a.getType() == SensitiveType.ADDRESS
+                && a.getStart() <= b.getStart() && a.getEnd() >= b.getEnd()
+                && (b.getType() == SensitiveType.PERSON || b.getType() == SensitiveType.ORGANIZATION);
+    }
+
     private int typeSpecificityScore(SensitiveType type) {
         if (type == null) {
             return 0;
         }
         return switch (type) {
             case ID_CARD, BANK_CARD, CREDIT_CARD, EMAIL, IP_ADDRESS -> 5;
-            case PHONE_NUMBER -> 4;
-            case NAME -> 3;
+            case PHONE_NUMBER, API_KEY -> 4;
+            case NAME, PERSON -> 3;
             case ADDRESS, ORGANIZATION -> 2;
             case PASSWORD -> 1;
             default -> 0;
@@ -300,8 +317,8 @@ public class DesensitizationManager {
             return 0;
         }
         return switch (type) {
-            case ID_CARD, PHONE_NUMBER, BANK_CARD, CREDIT_CARD, EMAIL, PASSWORD -> 4;
-            case NAME -> 3;
+            case ID_CARD, PHONE_NUMBER, BANK_CARD, CREDIT_CARD, EMAIL, PASSWORD, API_KEY -> 4;
+            case NAME, PERSON -> 3;
             case ADDRESS, ORGANIZATION -> 2;
             default -> 1;
         };

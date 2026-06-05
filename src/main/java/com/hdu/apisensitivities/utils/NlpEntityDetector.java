@@ -98,7 +98,8 @@ public class NlpEntityDetector {
         String[] labels = {
                 "身份证号", "银行卡号", "信用卡号", "账号", "编号", "流水号",
                 "订单号", "学号", "工号", "座号", "序号", "型号", "牌号",
-                "证号", "卡号", "票号", "单号", "档号"
+                "证号", "卡号", "票号", "单号", "档号", "快递号", "运单号",
+                "挂号", "代号"
         };
         for (String l : labels) {
             set.add(l);
@@ -108,7 +109,7 @@ public class NlpEntityDetector {
 
     private static Set<String> initAddressBlacklistPrefixChars() {
         Set<String> set = new HashSet<>();
-        String[] chars = { "证", "卡", "账", "编", "票", "单", "学", "工", "座", "序", "型", "牌", "档" };
+        String[] chars = { "证", "卡", "账", "编", "票", "单", "学", "工", "座", "序", "型", "牌", "档", "递", "水", "运", "挂", "代" };
         for (String c : chars) {
             set.add(c);
         }
@@ -217,7 +218,7 @@ public class NlpEntityDetector {
     }
 
     private static final Pattern ADDRESS_FALLBACK_PATTERN = Pattern.compile(
-            "(?<![\\u4e00-\\u9fa5])([\\u4e00-\\u9fa5]{2,6}(?:路|街|巷|道|大道|区|市|县|镇|村|号))");
+            "(?<![\\u4e00-\\u9fa5])([\\u4e00-\\u9fa5]{2,6}(?:路|街|巷|道|大道|区|市|县|镇|村|号|弄|里|园|苑|楼|层))");
 
     // ======================== 检测入口 ========================
 

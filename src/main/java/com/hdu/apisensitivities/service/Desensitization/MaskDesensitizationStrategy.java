@@ -27,13 +27,17 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
         MASK_TEMPLATES.put(SensitiveType.EMAIL, "[EMAIL]");
         MASK_TEMPLATES.put(SensitiveType.ID_CARD, "[ID_CARD]");
         MASK_TEMPLATES.put(SensitiveType.NAME, "[NAME]");
+        MASK_TEMPLATES.put(SensitiveType.PERSON, "[PERSON]");
         MASK_TEMPLATES.put(SensitiveType.ADDRESS, "[ADDRESS]");
+        MASK_TEMPLATES.put(SensitiveType.ORGANIZATION, "[ORG]");
         MASK_TEMPLATES.put(SensitiveType.CREDIT_CARD, "[CREDIT_CARD]");
         MASK_TEMPLATES.put(SensitiveType.PASSWORD, "[PASSWORD]");
+        MASK_TEMPLATES.put(SensitiveType.API_KEY, "[API_KEY]");
+        MASK_TEMPLATES.put(SensitiveType.PASSPORT, "[PASSPORT]");
         MASK_TEMPLATES.put(SensitiveType.BIRTH_DATE, "[BIRTH_DATE]");
         MASK_TEMPLATES.put(SensitiveType.CUSTOM, "[CUSTOM]");
         MASK_TEMPLATES.put(SensitiveType.IP_ADDRESS, "[IP]");
-        MASK_TEMPLATES.put(SensitiveType.LICENSE_PLATE, "[LICENSE_PLATE]");
+        MASK_TEMPLATES.put(SensitiveType.LICENSE_PLATE, "[PLATE]");
     }
 
     @Override
@@ -164,7 +168,8 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
         return new HashSet<>(Arrays.asList(SensitiveType.PHONE_NUMBER, SensitiveType.BANK_CARD, SensitiveType.EMAIL,
                 SensitiveType.ID_CARD, SensitiveType.ADDRESS, SensitiveType.NAME, SensitiveType.BIRTH_DATE,
                 SensitiveType.PASSWORD, SensitiveType.CREDIT_CARD, SensitiveType.PASSPORT, SensitiveType.IP_ADDRESS,
-                SensitiveType.LICENSE_PLATE));
+                SensitiveType.LICENSE_PLATE, SensitiveType.PERSON, SensitiveType.ORGANIZATION,
+                SensitiveType.API_KEY, SensitiveType.CUSTOM, SensitiveType.SOCIAL_SECURITY));
     }
 
     // 按字段路径对Map中的字段进行掩码处理

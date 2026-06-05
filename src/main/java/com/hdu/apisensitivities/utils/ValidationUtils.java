@@ -60,7 +60,7 @@ public final class ValidationUtils {
             return false;
         }
         String normalized = phone.replaceAll("[\\s-]", "");
-        return normalized.matches("1[3-9]\\d{9}");
+        return normalized.matches("1[3-9]\\d{9}") || normalized.matches("0\\d{2,3}\\d{7,8}");
     }
 
     public static boolean validateIdCard(String idCard) {
@@ -89,8 +89,11 @@ public final class ValidationUtils {
         if (plate == null) {
             return false;
         }
-        String regex = "(?:(?:[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙闽藏青川宁琼港澳][A-Z][A-HJ-NP-Z0-9]{4}[A-HJ-NP-Z0-9挂学警港澳])|" +
-                "(?:[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙闽藏青川宁琼][A-Z](?:[DF][A-HJ-NP-Z0-9]{5}|[A-HJ-NP-Z0-9]{5}[DF])))";
+        // 兼容京A88888、京A·88888、京AD12345、京A·D12345 等格式
+        String regex = "(?:(?:[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙闽藏青川宁琼港澳]" +
+                "[A-Z][·]?[A-Z]?[A-HJ-NP-Z0-9]{4}[A-HJ-NP-Z0-9挂学警港澳])|" +
+                "(?:[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙闽藏青川宁琼]" +
+                "[A-Z][·]?(?:[DF][A-HJ-NP-Z0-9]{5}|[A-HJ-NP-Z0-9]{5}[DF])))";
         return plate.matches(regex);
     }
 }
