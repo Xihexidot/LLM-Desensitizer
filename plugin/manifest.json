@@ -35,8 +35,10 @@
         "https://www.perplexity.ai/*"
       ],
       "js": [
+        "popup.js",
         "content.js"
       ],
+      "css": ["popup.css"],
       "run_at": "document_idle"
     }
   ]

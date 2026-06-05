@@ -54,7 +54,9 @@ async function reviewAndContinue({ input, trigger, content }) {
     }
 
     if (!isChromeRuntimeAvailable()) {
-      window.alert("[AI 输入安全助手] 插件上下文已失效，请刷新当前页面后重试。");
+      window.alert(
+        "[AI 输入安全助手] 插件上下文已失效，请刷新当前页面后重试。",
+      );
       return;
     }
 
@@ -68,7 +70,7 @@ async function reviewAndContinue({ input, trigger, content }) {
 
     if (!response?.ok) {
       const allow = window.confirm(
-        `[AI 输入安全助手]\n安全网关检查失败：${response?.error ?? "未知错误"}\n\n点击“确定”继续原文发送，点击“取消”终止发送。`,
+        `[AI 输入安全助手]\n安全网关检查失败：${response?.error ?? "未知错误"}\n\n点击"确定"继续原文发送，点击"取消"终止发送。`,
       );
       if (allow) {
         continueSend({ input, trigger, content });
@@ -87,25 +89,16 @@ async function reviewAndContinue({ input, trigger, content }) {
       return;
     }
 
-    const matchedTypes = [
-      ...new Set(
-        detectedEntities.map((entity) => entity?.type).filter(Boolean),
-      ),
-    ];
-    const preview =
-      desensitizedContent.length > 140
-        ? `${desensitizedContent.slice(0, 140)}...`
-        : desensitizedContent;
-    const confirmed = window.confirm(
-      `[AI 输入安全助手]\n检测到可能敏感信息：${matchedTypes.join("、") || "未知类型"}\n\n点击“确定”后将使用脱敏内容发送：\n${preview}\n\n点击“取消”则终止本次发送。`,
-    );
+    const choice = await Popup.show({
+      detectedEntities,
+      desensitizedContent,
+      originalContent: content,
+    });
 
-    if (confirmed) {
-      continueSend({
-        input,
-        trigger,
-        content: desensitizedContent,
-      });
+    if (choice === "send") {
+      continueSend({ input, trigger, content: desensitizedContent });
+    } else if (choice === "send-original") {
+      continueSend({ input, trigger, content });
     }
   } catch (error) {
     console.error("[AI 输入安全助手] 发送前检查失败", error);
