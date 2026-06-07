@@ -15,6 +15,7 @@ import com.hdu.apisensitivities.entity.gateway.GatewayRiskLevel;
 import com.hdu.apisensitivities.entity.gateway.GatewayTaskStatus;
 import com.hdu.apisensitivities.repository.GatewayAuditRepository;
 import com.hdu.apisensitivities.service.LlmProxyService;
+import com.hdu.apisensitivities.controller.RiskPolicyController;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -179,13 +180,61 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
     }
 
     private GatewayRiskDecision buildRiskDecision(List<String> matchedTypes, String routeTarget, boolean success) {
-        GatewayRiskLevel riskLevel = matchedTypes.isEmpty() ? GatewayRiskLevel.NONE : GatewayRiskLevel.MEDIUM;
-        GatewayDecisionAction decisionAction = matchedTypes.isEmpty()
-                ? GatewayDecisionAction.ALLOW
-                : GatewayDecisionAction.DESENSITIZE_AND_ALLOW;
         if (!success) {
-            riskLevel = GatewayRiskLevel.HIGH;
-            decisionAction = GatewayDecisionAction.BLOCK;
+            return GatewayRiskDecision.builder()
+                    .riskLevel(GatewayRiskLevel.HIGH).decisionAction(GatewayDecisionAction.BLOCK)
+                    .matchedTypes(matchedTypes).matchedRules(List.of())
+                    .policyId(DEFAULT_POLICY_ID).policyVersion(DEFAULT_POLICY_VERSION)
+                    .routeTarget(routeTarget).needApproval(false).build();
+        }
+
+        // 使用统一 RiskScorer 评分
+        int[] scoreResult = new int[2];
+        RiskScorer.scoreWithLevel(matchedTypes, scoreResult);
+        int score = scoreResult[0];
+        String riskLevelName = RiskScorer.levelName(scoreResult[1]);
+
+        // 默认可从 RiskPolicyController 读取全局配置
+        RiskPolicyController.PolicyConfig config = RiskPolicyController.getCurrentConfig();
+        String defaultAction = config.global != null ? config.global.defaultAction : "DESENSITIZE_AND_ALLOW";
+        int maxCount = config.global != null ? config.global.maxSensitiveCount : 5;
+
+        // 命中类型数超过全局阈值时强制阻断
+        if (matchedTypes != null && matchedTypes.size() > maxCount) {
+            riskLevelName = "HIGH";
+            defaultAction = "BLOCK";
+        }
+
+        GatewayRiskLevel riskLevel;
+        switch (riskLevelName) {
+            case "CRITICAL":
+                riskLevel = GatewayRiskLevel.CRITICAL;
+                break;
+            case "HIGH":
+                riskLevel = GatewayRiskLevel.HIGH;
+                break;
+            case "MEDIUM":
+                riskLevel = GatewayRiskLevel.MEDIUM;
+                break;
+            case "LOW":
+                riskLevel = GatewayRiskLevel.LOW;
+                break;
+            default:
+                riskLevel = GatewayRiskLevel.NONE;
+                break;
+        }
+
+        GatewayDecisionAction decisionAction;
+        switch (defaultAction) {
+            case "BLOCK":
+                decisionAction = GatewayDecisionAction.BLOCK;
+                break;
+            case "ALLOW":
+                decisionAction = GatewayDecisionAction.ALLOW;
+                break;
+            default:
+                decisionAction = GatewayDecisionAction.DESENSITIZE_AND_ALLOW;
+                break;
         }
 
         return GatewayRiskDecision.builder()
@@ -203,6 +252,7 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
     private GatewayAuditEvent buildAuditEvent(GatewayInvocationContext invocationContext, String requestType,
             String targetProvider, List<String> matchedTypes, GatewayRiskDecision riskDecision, String requestPayload,
             String responsePayload) {
+        String normalizedProvider = normalizeProviderName(targetProvider);
         return GatewayAuditEvent.builder()
                 .eventId("evt-" + UUID.randomUUID())
                 .timestamp(Instant.now())
@@ -212,8 +262,8 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
                 .department(invocationContext.getDepartment())
                 .channel(invocationContext.getChannel())
                 .requestType(requestType)
-                .targetProvider(targetProvider)
-                .targetModel(targetProvider)
+                .targetProvider(normalizedProvider)
+                .targetModel(normalizedProvider)
                 .sceneCode(invocationContext.getSceneCode())
                 .matchedSensitiveTypes(matchedTypes)
                 .decisionAction(riskDecision.getDecisionAction())
@@ -295,5 +345,25 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 algorithm is not available", e);
         }
+    }
+
+    /**
+     * 将 Java 枚举名映射为人类可读平台名，确保与插件端 detectCurrentProvider 输出一致。
+     * 已经可读的名称（插件端传入的）原样返回。
+     */
+    private static String normalizeProviderName(String raw) {
+        if (raw == null || raw.isBlank())
+            return raw;
+        return switch (raw) {
+            case "DEEPSEEK" -> "DeepSeek";
+            case "OPENAI", "AZURE_OPENAI" -> "OpenAI";
+            case "DOUBAO" -> "豆包";
+            case "CLAUDE" -> "Claude";
+            case "QWEN" -> "通义千问";
+            case "KIMI" -> "Kimi";
+            case "HUNYUAN" -> "混元";
+            case "OLLAMA" -> "Ollama (本地)";
+            default -> raw;
+        };
     }
 }

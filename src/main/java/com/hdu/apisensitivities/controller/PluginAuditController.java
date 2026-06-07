@@ -11,6 +11,7 @@ import com.hdu.apisensitivities.entity.gateway.GatewayDecisionAction;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskLevel;
 import com.hdu.apisensitivities.repository.GatewayAuditRepository;
 import com.hdu.apisensitivities.service.DesensitizationManager;
+import com.hdu.apisensitivities.service.gateway.RiskScorer;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -50,9 +51,27 @@ public class PluginAuditController {
 
         String eventId = "evt-" + UUID.randomUUID();
         List<String> matchedTypes = extractTypes(result.getDetectedEntities());
-        GatewayRiskLevel riskLevel = matchedTypes.isEmpty() ? GatewayRiskLevel.NONE
-                : matchedTypes.size() >= 3 ? GatewayRiskLevel.HIGH
-                        : GatewayRiskLevel.MEDIUM;
+        int[] scoreResult = new int[2];
+        RiskScorer.scoreWithLevel(matchedTypes, scoreResult);
+        int riskLevelInt = scoreResult[1];
+        GatewayRiskLevel riskLevel;
+        switch (riskLevelInt) {
+            case 3:
+                riskLevel = GatewayRiskLevel.HIGH;
+                break;
+            case 4:
+                riskLevel = GatewayRiskLevel.CRITICAL;
+                break;
+            case 2:
+                riskLevel = GatewayRiskLevel.MEDIUM;
+                break;
+            case 1:
+                riskLevel = GatewayRiskLevel.LOW;
+                break;
+            default:
+                riskLevel = GatewayRiskLevel.NONE;
+                break;
+        }
 
         GatewayAuditEvent event = GatewayAuditEvent.builder()
                 .eventId(eventId)

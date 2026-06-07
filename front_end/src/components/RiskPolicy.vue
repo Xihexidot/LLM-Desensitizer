@@ -1,5 +1,6 @@
 <script setup>
-  import { ref, computed } from "vue";
+  import { ref, onMounted } from "vue";
+  import { API_BASE_URL } from "../config";
 
   const SENSITIVE_TYPE_OPTIONS = [
     "PHONE_NUMBER",
@@ -11,11 +12,13 @@
     "PASSWORD",
     "API_KEY",
     "LICENSE_PLATE",
-    "CERTIFICATE_NUMBER",
-    "COMPANY_NAME",
-    "MEDICAL_DATA",
+    "PASSPORT",
+    "SOCIAL_SECURITY",
+    "CREDIT_CARD",
+    "BIRTH_DATE",
+    "IP_ADDRESS",
   ];
-  const RISK_LEVELS = ["LOW", "MEDIUM", "HIGH"];
+  const RISK_LEVELS = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
   const ACTIONS = [
     "ALLOW",
     "DESENSITIZE_AND_ALLOW",
@@ -28,61 +31,16 @@
     BLOCK: "阻断",
     ROUTE_TO_INTERNAL_MODEL: "路由到内部模型",
   };
-  const RISK_LABELS = { LOW: "低", MEDIUM: "中", HIGH: "高" };
+  const RISK_LABELS = { LOW: "低", MEDIUM: "中", HIGH: "高", CRITICAL: "严重" };
 
-  const policies = ref([
-    {
-      id: 1,
-      sceneName: "客服场景",
-      types: ["PHONE_NUMBER", "ADDRESS", "ID_CARD"],
-      threshold: 1,
-      riskLevel: "MEDIUM",
-      action: "DESENSITIZE_AND_ALLOW",
-      enabled: true,
-    },
-    {
-      id: 2,
-      sceneName: "金融场景",
-      types: ["BANK_CARD", "ID_CARD", "PASSWORD"],
-      threshold: 0,
-      riskLevel: "HIGH",
-      action: "BLOCK",
-      enabled: true,
-    },
-    {
-      id: 3,
-      sceneName: "医疗场景",
-      types: ["ID_CARD", "MEDICAL_DATA", "PERSON_NAME"],
-      threshold: 0,
-      riskLevel: "HIGH",
-      action: "BLOCK",
-      enabled: true,
-    },
-    {
-      id: 4,
-      sceneName: "研发场景",
-      types: ["API_KEY", "PASSWORD"],
-      threshold: 1,
-      riskLevel: "HIGH",
-      action: "BLOCK",
-      enabled: true,
-    },
-    {
-      id: 5,
-      sceneName: "招聘场景",
-      types: ["PHONE_NUMBER", "ID_CARD"],
-      threshold: 2,
-      riskLevel: "MEDIUM",
-      action: "DESENSITIZE_AND_ALLOW",
-      enabled: true,
-    },
-  ]);
+  const policies = ref([]);
   const globalPolicy = ref({
     defaultAction: "DESENSITIZE_AND_ALLOW",
     maxSensitiveCount: 5,
     requireOutputReview: false,
   });
   const message = ref("");
+  const loading = ref(false);
   const editIdx = ref(-1);
   const newScene = ref({
     sceneName: "",
@@ -92,18 +50,54 @@
     action: "DESENSITIZE_AND_ALLOW",
     enabled: true,
   });
-  let nextId = 6;
+  let nextId = 100;
+
+  async function loadConfig() {
+    loading.value = true;
+    try {
+      const res = await fetch(`${API_BASE_URL}/gateway/v1/risk-policy`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (data.global) globalPolicy.value = data.global;
+      if (data.scenes) policies.value = data.scenes.map((s) => ({ ...s }));
+      nextId = Math.max(100, ...policies.value.map((p) => p.id || 0)) + 1;
+      message.value = "";
+    } catch (e) {
+      message.value = "加载失败: " + e.message;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  async function saveConfig(msg) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/gateway/v1/risk-policy`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          global: globalPolicy.value,
+          scenes: policies.value,
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      message.value = msg || "配置已保存";
+    } catch (e) {
+      message.value = "保存失败: " + e.message;
+    }
+  }
+
+  onMounted(loadConfig);
 
   function togglePolicy(id) {
     const p = policies.value.find((r) => r.id === id);
     if (p) {
       p.enabled = !p.enabled;
-      message.value = `策略已${p.enabled ? "启用" : "禁用"}`;
+      saveConfig(`策略已${p.enabled ? "启用" : "禁用"}`);
     }
   }
   function removePolicy(id) {
     policies.value = policies.value.filter((r) => r.id !== id);
-    message.value = "策略已删除";
+    saveConfig("策略已删除");
   }
   function startEdit(idx) {
     editIdx.value = idx;
@@ -111,13 +105,20 @@
   function cancelEdit() {
     editIdx.value = -1;
   }
+  function finishEdit(idx) {
+    editIdx.value = -1;
+    saveConfig("策略已保存");
+  }
   function toggleType(policy, type) {
     const idx = policy.types.indexOf(type);
     if (idx >= 0) policy.types.splice(idx, 1);
     else policy.types.push(type);
-    message.value = "";
   }
-
+  function toggleNewType(type) {
+    const idx = newScene.value.types.indexOf(type);
+    if (idx >= 0) newScene.value.types.splice(idx, 1);
+    else newScene.value.types.push(type);
+  }
   function addNewScene() {
     if (!newScene.value.sceneName.trim()) {
       message.value = "请输入场景名称";
@@ -141,19 +142,22 @@
       action: "DESENSITIZE_AND_ALLOW",
       enabled: true,
     };
-    message.value = "新场景已添加";
+    saveConfig("新场景已添加");
   }
-
-  function toggleNewType(type) {
-    const idx = newScene.value.types.indexOf(type);
-    if (idx >= 0) newScene.value.types.splice(idx, 1);
-    else newScene.value.types.push(type);
+  function saveGlobal() {
+    saveConfig("全局配置已保存");
   }
 </script>
 
 <template>
   <div class="policy-page">
     <div class="page-head"><h2>风险策略配置</h2></div>
+    <div
+      v-if="loading"
+      class="loading"
+    >
+      加载中...
+    </div>
     <div
       v-if="message"
       class="msg"
@@ -169,6 +173,7 @@
         <span>默认决策动作</span>
         <select
           v-model="globalPolicy.defaultAction"
+          @change="saveGlobal()"
           class="sel"
         >
           <option
@@ -185,6 +190,7 @@
         <input
           type="number"
           v-model.number="globalPolicy.maxSensitiveCount"
+          @change="saveGlobal()"
           min="1"
           max="20"
           class="num-inp"
@@ -196,6 +202,7 @@
           ><input
             type="checkbox"
             v-model="globalPolicy.requireOutputReview"
+            @change="saveGlobal()"
           />
           启用</label
         >
@@ -216,7 +223,7 @@
             <th>风险</th>
             <th>动作</th>
             <th style="width: 50px">启用</th>
-            <th style="width: 60px">操作</th>
+            <th style="width: 70px">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -225,7 +232,6 @@
             :key="p.id"
             :class="{ disabled: !p.enabled }"
           >
-            <!-- 编辑模式 -->
             <template v-if="editIdx === idx">
               <td>
                 <input
@@ -238,7 +244,7 @@
                   <span
                     v-for="t in SENSITIVE_TYPE_OPTIONS"
                     :key="t"
-                    :class="['chip', { selected: p.types.includes(t) }]"
+                    :class="['chip', { selected: (p.types || []).includes(t) }]"
                     @click="toggleType(p, t)"
                     >{{ t }}</span
                   >
@@ -299,21 +305,17 @@
               <td>
                 <button
                   class="btn-sm btn-save"
-                  @click="
-                    editIdx = -1;
-                    message = '策略已保存';
-                  "
+                  @click="finishEdit(idx)"
                 >
                   保存
                 </button>
               </td>
             </template>
-            <!-- 展示模式 -->
             <template v-else>
               <td class="scene-name">{{ p.sceneName }}</td>
               <td>
                 <span
-                  v-for="t in p.types"
+                  v-for="t in p.types || []"
                   :key="t"
                   class="type-badge"
                   >{{ t }}</span
@@ -327,13 +329,14 @@
                       LOW: '#2563eb',
                       MEDIUM: '#f59e0b',
                       HIGH: '#ef4444',
+                      CRITICAL: '#7c3aed',
                     }[p.riskLevel],
                     fontWeight: 700,
                   }"
-                  >{{ RISK_LABELS[p.riskLevel] }}</span
+                  >{{ RISK_LABELS[p.riskLevel] || p.riskLevel }}</span
                 >
               </td>
-              <td>{{ ACTION_LABELS[p.action] }}</td>
+              <td>{{ ACTION_LABELS[p.action] || p.action }}</td>
               <td>
                 <label class="toggle"
                   ><input
@@ -373,8 +376,8 @@
     </div>
     <div class="add-card">
       <div class="add-row">
-        <span class="add-label">场景名称</span>
-        <input
+        <span class="add-label">场景名称</span
+        ><input
           class="cell-inp"
           v-model="newScene.sceneName"
           placeholder="如：法律场景"
@@ -393,8 +396,8 @@
         </div>
       </div>
       <div class="add-row">
-        <span class="add-label">阈值</span>
-        <select
+        <span class="add-label">阈值</span
+        ><select
           v-model.number="newScene.threshold"
           class="sel-sm"
         >
@@ -406,8 +409,8 @@
             {{ n === 0 ? "任意" : n + "条" }}
           </option>
         </select>
-        <span class="add-label">风险</span>
-        <select
+        <span class="add-label">风险</span
+        ><select
           v-model="newScene.riskLevel"
           class="sel-sm"
         >
@@ -419,8 +422,8 @@
             {{ RISK_LABELS[l] }}
           </option>
         </select>
-        <span class="add-label">动作</span>
-        <select
+        <span class="add-label">动作</span
+        ><select
           v-model="newScene.action"
           class="sel-sm"
         >
@@ -457,6 +460,11 @@
   .page-head h2 {
     margin: 0;
     font-size: 1.3rem;
+  }
+  .loading {
+    text-align: center;
+    color: #94a3b8;
+    padding: 30px 0;
   }
   .msg {
     padding: 8px 12px;
