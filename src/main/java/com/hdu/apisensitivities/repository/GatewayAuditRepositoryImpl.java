@@ -128,6 +128,13 @@ public class GatewayAuditRepositoryImpl implements GatewayAuditRepository {
                                 today);
                 stats.put("byDecision", byDecision);
 
+                // 按目标LLM供应商分布（外部调用统计）
+                List<Map<String, Object>> byTargetProvider = jdbcTemplate.queryForList(
+                                "SELECT target_provider, COUNT(*) as cnt FROM gateway_audit_event "
+                                                + "WHERE timestamp >= ? AND target_provider IS NOT NULL GROUP BY target_provider",
+                                today);
+                stats.put("byTargetProvider", byTargetProvider);
+
                 return stats;
         }
 

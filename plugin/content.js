@@ -4,6 +4,25 @@ const bypassElements = new WeakMap();
 document.addEventListener("click", handleClick, true);
 document.addEventListener("keydown", handleKeydown, true);
 
+function detectCurrentProvider() {
+  try {
+    const host = window.location.hostname || "";
+    if (host.includes("deepseek")) return "DeepSeek";
+    if (host.includes("chatgpt") || host.includes("openai")) return "ChatGPT";
+    if (host.includes("kimi") || host.includes("moonshot")) return "Kimi";
+    if (host.includes("tongyi") || host.includes("qwen")) return "通义千问";
+    if (host.includes("doubao") || host.includes("volces")) return "豆包";
+    if (host.includes("claude") || host.includes("anthropic")) return "Claude";
+    if (host.includes("gemini") || host.includes("google")) return "Gemini";
+    if (host.includes("wenxin") || host.includes("baidu")) return "文心一言";
+    if (host.includes("hunyuan")) return "混元";
+    if (host.includes("perplexity")) return "Perplexity";
+    return host || "未知平台";
+  } catch {
+    return "未知平台";
+  }
+}
+
 function handleClick(event) {
   const activeInput = findEditable(document.activeElement);
   const trigger = findSendTrigger(event.target, activeInput);
@@ -65,6 +84,7 @@ async function reviewAndContinue({ input, trigger, content }) {
       payload: {
         content,
         language: guessLanguage(content),
+        targetProvider: detectCurrentProvider(),
       },
     });
 
@@ -127,18 +147,21 @@ function notifyConfirmAction(auditEventId, userAction) {
 
 function showActionToast(userAction) {
   const labels = {
-    DESENSITIZE_AND_SEND: '已选择发送脱敏内容',
-    SEND_ORIGINAL: '已选择发送原文',
-    CANCEL: '已取消发送',
+    DESENSITIZE_AND_SEND: "已选择发送脱敏内容",
+    SEND_ORIGINAL: "已选择发送原文",
+    CANCEL: "已取消发送",
   };
   const msg = labels[userAction] || userAction;
-  const toast = document.createElement('div');
+  const toast = document.createElement("div");
   toast.textContent = `[AI安全助手] ${msg}`;
-  toast.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#1e293b;color:#f1f5f9;padding:10px 20px;border-radius:8px;z-index:2147483647;font-size:14px;font-family:sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);opacity:0;transition:opacity 0.3s;pointer-events:none';
+  toast.style.cssText =
+    "position:fixed;bottom:24px;right:24px;background:#1e293b;color:#f1f5f9;padding:10px 20px;border-radius:8px;z-index:2147483647;font-size:14px;font-family:sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);opacity:0;transition:opacity 0.3s;pointer-events:none";
   document.body.appendChild(toast);
-  requestAnimationFrame(() => { toast.style.opacity = '1'; });
+  requestAnimationFrame(() => {
+    toast.style.opacity = "1";
+  });
   setTimeout(() => {
-    toast.style.opacity = '0';
+    toast.style.opacity = "0";
     setTimeout(() => toast.remove(), 300);
   }, 2500);
 }

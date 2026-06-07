@@ -39,6 +39,7 @@ async function reviewInput(payload) {
       language: payload?.language ?? "zh",
       userId: payload?.userId ?? userId,
       department: payload?.department ?? department,
+      targetProvider: payload?.targetProvider ?? '',
       strictMode: false,
       autoScenarioDetection: false,
     }),

@@ -61,6 +61,7 @@ public class PluginAuditController {
                 .department(req.getDepartment())
                 .channel("BROWSER_PLUGIN")
                 .requestType("PLUGIN_CHECK")
+                .targetProvider(req.getTargetProvider())
                 .matchedSensitiveTypes(matchedTypes)
                 .decisionAction(riskLevel == GatewayRiskLevel.NONE
                         ? GatewayDecisionAction.ALLOW

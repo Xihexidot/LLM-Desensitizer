@@ -130,7 +130,7 @@
         class="nav-item"
         href="#"
         @click.prevent="$emit('show-providers')"
-        >供应商</a
+        >调用监控</a
       >
 
       <a

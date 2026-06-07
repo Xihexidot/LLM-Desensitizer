@@ -215,7 +215,7 @@
           <tr>
             <th style="width: 150px">时间</th>
             <th>用户</th>
-            <th>渠道</th>
+            <th>目标平台</th>
             <th>敏感类型</th>
             <th>风险</th>
             <th>用户操作</th>
@@ -238,8 +238,8 @@
               <td class="cell-time">{{ formatTime(e.timestamp) }}</td>
               <td>{{ e.userId || "-" }}</td>
               <td>
-                <span class="channel-tag">{{
-                  CHANNEL_LABELS[e.channel] || e.channel || "-"
+                <span class="provider-tag">{{
+                  e.targetProvider || e.targetModel || "-"
                 }}</span>
               </td>
               <td>
@@ -306,6 +306,10 @@
                   </div>
                   <div class="content-meta">
                     <span>部门: {{ e.department || "-" }}</span>
+                    <span
+                      >渠道:
+                      {{ CHANNEL_LABELS[e.channel] || e.channel || "-" }}</span
+                    >
                     <span>决策: {{ e.decisionAction || "-" }}</span>
                   </div>
                 </div>
@@ -477,6 +481,11 @@
   .channel-tag {
     font-size: 0.78rem;
     color: #6366f1;
+  }
+  .provider-tag {
+    font-size: 0.8rem;
+    color: #7c3aed;
+    font-weight: 500;
   }
   .expand-arrow {
     color: #94a3b8;
