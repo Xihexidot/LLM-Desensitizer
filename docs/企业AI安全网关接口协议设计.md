@@ -548,18 +548,119 @@
 
 `GET /gateway/v1/audit/events/{eventId}`
 
-注意：
+返回完整审计事件信息，包括：
 
-- 事件详情不建议返回完整明文原文
-- 只返回脱敏样本、摘要、哈希和命中信息
+- 基本信息：eventId、timestamp、tenantId、appId、userId、department、channel
+- 风险信息：inputRiskLevel、outputRiskLevel、decisionAction、userAction、matchedSensitiveTypes
+- **内容审查**：originalContent（原始输入）、processedContent（脱敏后内容）—— 供管理员安全审查
 
-## 14. 策略与规则接口
+> 注意：此接口为管理员审查使用，返回完整原文。不应暴露给普通用户。
+
+### 13.3 审计统计接口
+
+`GET /gateway/v1/audit/stats`
+
+返回今日统计摘要，按多维度分组：
+
+```json
+{
+  "todayTotal": 47,
+  "byChannel": [
+    { "channel": "BROWSER_PLUGIN", "cnt": 35 },
+    { "channel": "backend-api", "cnt": 12 }
+  ],
+  "byRiskLevel": [
+    { "input_risk_level": "HIGH", "cnt": 4 },
+    { "input_risk_level": "MEDIUM", "cnt": 18 }
+  ],
+  "byDecision": [
+    { "decision_action": "DESENSITIZE_AND_ALLOW", "cnt": 30 },
+    { "decision_action": "BLOCK", "cnt": 8 }
+  ],
+  "byTargetProvider": [
+    { "target_provider": "DeepSeek", "cnt": 35 },
+    { "target_provider": "ChatGPT", "cnt": 8 }
+  ],
+  "byUserAction": [
+    { "user_action": "DESENSITIZE_AND_SEND", "cnt": 20 },
+    { "user_action": "CANCEL", "cnt": 10 }
+  ]
+}
+```
+
+## 14. 插件审计管道接口
+
+### 14.1 插件发送前检查
+
+`POST /plugin/audit-check`
+
+用于浏览器插件在用户点击发送时，将输入内容提交检查。
+
+请求示例：
+
+```json
+{
+  "content": "客户张三，手机号13812345678",
+  "dataType": "TEXT",
+  "language": "zh",
+  "userId": "user-m4k7x2p9",
+  "department": "客服部",
+  "targetProvider": "DeepSeek",
+  "strictMode": false,
+  "autoScenarioDetection": false
+}
+```
+
+字段说明：
+
+- `content`：用户输入原文
+- `userId`：插件端自动生成的用户唯一标识（chrome.storage.local 持久化）
+- `department`：可配置的部门信息
+- `targetProvider`：插件根据当前网页域名自动检测的目标 LLM 平台名（DeepSeek / ChatGPT / Kimi / 通义千问 / 豆包 等）
+
+响应示例：
+
+```json
+{
+  "detectedEntities": [
+    { "type": "PERSON_NAME", "value": "张三", "start": 0, "end": 2 },
+    { "type": "PHONE_NUMBER", "value": "13812345678", "start": 4, "end": 15 }
+  ],
+  "desensitizedContent": "客户[NAME_1]，手机号[PHONE_1]",
+  "auditEventId": "evt-abc123"
+}
+```
+
+说明：此接口执行检测 + 脱敏 + 写入审计表，返回 `auditEventId` 供后续用户操作确认。
+
+### 14.2 插件用户操作确认
+
+`POST /plugin/confirm-action`
+
+用于回写用户在弹窗中的选择。
+
+请求示例：
+
+```json
+{
+  "auditEventId": "evt-abc123",
+  "userAction": "DESENSITIZE_AND_SEND"
+}
+```
+
+`userAction` 枚举：
+
+- `DESENSITIZE_AND_SEND` — 发送脱敏版
+- `SEND_ORIGINAL` — 发送原文
+- `CANCEL` — 取消发送
+
+## 15. 策略与规则接口
 
 ### 14.1 策略查询接口
 
 `GET /gateway/v1/policies`
 
-### 14.2 策略发布接口
+### 15.2 策略发布接口
 
 `POST /gateway/v1/policies/publish`
 
@@ -649,6 +750,10 @@ GW-XXXX
 3. `POST /gateway/v1/files/tasks`
 4. `GET /gateway/v1/files/tasks/{taskId}`
 5. `GET /gateway/v1/audit/events`
+6. `GET /gateway/v1/audit/events/{eventId}` — 审计事件详情
+7. `GET /gateway/v1/audit/stats` — 审计统计
+8. `POST /plugin/audit-check` — 插件审计管道
+9. `POST /plugin/confirm-action` — 用户操作确认
 
 ### 16.2 当前项目的改造对应
 
@@ -671,7 +776,7 @@ GW-XXXX
 - `审计事件对象`
 - `应用接入对象`
 
-## 17. 结论
+## 18. 结论
 
 企业 AI 安全网关的接口协议，不能只围绕“调用模型”设计，而必须围绕以下对象来设计：
 
