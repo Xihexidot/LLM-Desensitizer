@@ -135,6 +135,28 @@ public class EnterpriseGatewayController {
                 return ResponseEntity.ok(auditRepository.getStats());
         }
 
+        @GetMapping("/audit/events/{eventId}")
+        public ResponseEntity<GatewayResponse> getAuditEventDetail(
+                        @PathVariable String eventId,
+                        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
+                        @RequestHeader(value = "X-Trace-Id", required = false) String traceId) {
+                return auditRepository.findById(eventId)
+                        .map(event -> {
+                                Map<String, Object> data = new HashMap<>();
+                                data.put("item", event);
+                                return ResponseEntity.ok(GatewayResponse.builder()
+                                        .code("GW-0000").message("success")
+                                        .requestId(requestId).traceId(traceId).success(true)
+                                        .data(data).risk(GatewayRiskDecision.builder()
+                                                .riskLevel(GatewayRiskLevel.NONE).build()).build());
+                        })
+                        .orElseGet(() -> ResponseEntity.ok(GatewayResponse.builder()
+                                .code("GW-0404").message("审计事件不存在")
+                                .requestId(requestId).traceId(traceId).success(false)
+                                .data(Map.of()).risk(GatewayRiskDecision.builder()
+                                        .riskLevel(GatewayRiskLevel.NONE).build()).build()));
+        }
+
         private GatewayInvocationContext buildInvocationContext(String authorization, String appId, String requestId,
                         String tenantId, String channel, String traceId, String userId, String userRole,
                         String department,

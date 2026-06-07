@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Repository
 public class GatewayAuditRepositoryImpl implements GatewayAuditRepository {
@@ -130,6 +131,15 @@ public class GatewayAuditRepositoryImpl implements GatewayAuditRepository {
                 return stats;
         }
 
+        @Override
+        public Optional<GatewayAuditEvent> findById(String eventId) {
+                List<GatewayAuditEvent> list = jdbcTemplate.query(
+                                "SELECT * FROM gateway_audit_event WHERE event_id = ?",
+                                new Object[] { eventId },
+                                new AuditEventRowMapper());
+                return list.isEmpty() ? Optional.empty() : Optional.of(list.get(0));
+        }
+
         private String joinTypes(List<String> types) {
                 if (types == null || types.isEmpty()) {
                         return null;
@@ -165,9 +175,9 @@ public class GatewayAuditRepositoryImpl implements GatewayAuditRepository {
                                         .decisionAction(da != null ? GatewayDecisionAction.valueOf(da) : null)
                                         .inputRiskLevel(irl != null ? GatewayRiskLevel.valueOf(irl) : null)
                                         .outputRiskLevel(orl != null ? GatewayRiskLevel.valueOf(orl) : null)
-                    .userAction(rs.getString("user_action"))
-                    .originalContent(rs.getString("original_content"))
-                    .processedContent(rs.getString("processed_content"))
+                                        .userAction(rs.getString("user_action"))
+                                        .originalContent(rs.getString("original_content"))
+                                        .processedContent(rs.getString("processed_content"))
                                         .build();
                 }
         }

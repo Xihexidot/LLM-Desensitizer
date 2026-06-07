@@ -6,6 +6,10 @@
   import ConversationHistory from "./components/ConversationHistory.vue";
   import DashboardStats from "./components/DashboardStats.vue";
   import AuditList from "./components/AuditList.vue";
+  import AuditDetail from "./components/AuditDetail.vue";
+  import DictManagement from "./components/DictManagement.vue";
+  import RiskPolicy from "./components/RiskPolicy.vue";
+  import ProviderStatus from "./components/ProviderStatus.vue";
   import { API_BASE_URL } from "./config";
 
   // 视图控制 — 默认首页为仪表盘
@@ -35,6 +39,25 @@
 
   function showTool() {
     currentView.value = "tool";
+  }
+
+  function showPolicy() {
+    currentView.value = "policy";
+  }
+
+  function showProviders() {
+    currentView.value = "providers";
+  }
+
+  // 审计详情
+  const selectedAuditEventId = ref(null);
+  function showAuditDetail(eventId) {
+    selectedAuditEventId.value = eventId;
+    currentView.value = "audit-detail";
+  }
+  function backToAuditList() {
+    selectedAuditEventId.value = null;
+    currentView.value = "audit";
   }
 
   // 健康检查
@@ -185,6 +208,8 @@
       @show-audit="showAudit"
       @show-dict="showDict"
       @show-tool="showTool"
+      @show-policy="showPolicy"
+      @show-providers="showProviders"
     />
     <div class="content">
       <header class="header">
@@ -204,7 +229,38 @@
           v-if="currentView === 'audit'"
           class="card full-width"
         >
-          <AuditList />
+          <AuditList @view-detail="showAuditDetail" />
+        </div>
+
+        <div
+          v-if="currentView === 'audit-detail'"
+          class="card full-width"
+        >
+          <AuditDetail
+            :eventId="selectedAuditEventId"
+            @back="backToAuditList"
+          />
+        </div>
+
+        <div
+          v-if="currentView === 'dict'"
+          class="card full-width"
+        >
+          <DictManagement />
+        </div>
+
+        <div
+          v-if="currentView === 'policy'"
+          class="card full-width"
+        >
+          <RiskPolicy />
+        </div>
+
+        <div
+          v-if="currentView === 'providers'"
+          class="card full-width"
+        >
+          <ProviderStatus />
         </div>
 
         <div

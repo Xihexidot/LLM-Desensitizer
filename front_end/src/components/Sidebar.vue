@@ -120,6 +120,18 @@
         @click.prevent="$emit('show-dict')"
         >词典管理</a
       >
+      <a
+        class="nav-item"
+        href="#"
+        @click.prevent="$emit('show-policy')"
+        >风险策略</a
+      >
+      <a
+        class="nav-item"
+        href="#"
+        @click.prevent="$emit('show-providers')"
+        >供应商</a
+      >
 
       <a
         class="nav-item"
@@ -198,6 +210,8 @@
     "show-audit",
     "show-dict",
     "show-tool",
+    "show-policy",
+    "show-providers",
   ]);
   const props = defineProps({
     healthStatus: String,

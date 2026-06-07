@@ -4,6 +4,7 @@ import com.hdu.apisensitivities.entity.gateway.GatewayAuditEvent;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public interface GatewayAuditRepository {
 
@@ -14,4 +15,6 @@ public interface GatewayAuditRepository {
     List<GatewayAuditEvent> query(String appId, String userId, String decisionAction, int limit);
 
     Map<String, Object> getStats();
+
+    Optional<GatewayAuditEvent> findById(String eventId);
 }

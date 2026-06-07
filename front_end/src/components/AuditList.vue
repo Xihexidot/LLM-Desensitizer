@@ -2,6 +2,8 @@
   import { ref, onMounted, onUnmounted } from "vue";
   import { API_BASE_URL } from "../config";
 
+  const emit = defineEmits(["view-detail"]);
+
   const events = ref([]);
   const loading = ref(false);
   const error = ref("");
@@ -110,6 +112,7 @@
             <th>风险</th>
             <th>用户操作</th>
             <th style="width: 50px"></th>
+            <th style="width: 60px">详情</th>
           </tr>
         </thead>
         <tbody>
@@ -174,12 +177,20 @@
                   expandedRow === e.eventId ? "▼" : "▶"
                 }}</span>
               </td>
+              <td>
+                <a
+                  href="#"
+                  class="detail-link"
+                  @click.prevent.stop="$emit('view-detail', e.eventId)"
+                  >详情</a
+                >
+              </td>
             </tr>
             <tr
               v-if="expandedRow === e.eventId"
               class="expand-row"
             >
-              <td colspan="8">
+              <td colspan="9">
                 <div class="expand-content">
                   <div class="content-pair">
                     <div class="content-box">
@@ -324,6 +335,15 @@
   .expand-arrow {
     color: #94a3b8;
     font-size: 0.7rem;
+  }
+
+  .detail-link {
+    color: #6366f1;
+    font-size: 0.82rem;
+    text-decoration: none;
+  }
+  .detail-link:hover {
+    text-decoration: underline;
   }
 
   .expand-row td {
