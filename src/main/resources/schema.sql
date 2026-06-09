@@ -51,3 +51,41 @@ CREATE TABLE IF NOT EXISTS gateway_audit_event (
     INDEX idx_timestamp (timestamp),
     INDEX idx_channel (channel)
 );
+
+-- =======================================================
+-- 预置演示数据（比赛评审用 — 打开仪表盘即有数据可看）
+-- =======================================================
+INSERT INTO gateway_audit_event (event_id, timestamp, user_id, department, channel, request_type, target_provider, matched_sensitive_types, decision_action, input_risk_level, output_risk_level, user_action, original_content, processed_content, request_hash)
+SELECT *
+FROM (
+  -- 1) 客服部张三 — DeepSeek — 手机号+身份证 → MEDIUM，脱敏后发送
+  SELECT 'evt-demo-001' AS event_id, DATEADD('MINUTE', -30, CURRENT_TIMESTAMP) AS timestamp, 'user-m4k7x2p9' AS user_id, '客服部' AS department, 'BROWSER_PLUGIN' AS channel, 'PLUGIN_CHECK' AS request_type, 'DeepSeek' AS target_provider, 'PHONE_NUMBER,ID_CARD' AS matched_sensitive_types, 'DESENSITIZE_AND_ALLOW' AS decision_action, 'MEDIUM' AS input_risk_level, 'NONE' AS output_risk_level, 'DESENSITIZE_AND_SEND' AS user_action, '请帮我整理客户张三的资料，手机号13812345678，身份证330102199901011234' AS original_content, '请帮我整理客户[NAME_1]的资料，手机号[PHONE_1]，身份证[ID_CARD_1]' AS processed_content, 'h1' AS request_hash
+  UNION ALL
+  -- 2) 研发部李四 — ChatGPT — API_KEY+PASSWORD → HIGH，用户取消
+  SELECT 'evt-demo-002', DATEADD('MINUTE', -25, CURRENT_TIMESTAMP), 'user-r8f3k9', '研发部', 'BROWSER_PLUGIN', 'PLUGIN_CHECK', 'ChatGPT', 'API_KEY,PASSWORD', 'BLOCK', 'HIGH', 'NONE', 'CANCEL', '帮我调试这个接口，API Key 是 sk-abc123def456，密码是 admin123', '帮我调试这个接口，API Key 是 [API_KEY_1]，密码是 [PASSWORD_1]', 'h2'
+  UNION ALL
+  -- 3) 市场部王五 — Kimi — PHONE_NUMBER → LOW，发送脱敏版
+  SELECT 'evt-demo-003', DATEADD('MINUTE', -22, CURRENT_TIMESTAMP), 'user-p1z7v3', '市场部', 'BROWSER_PLUGIN', 'PLUGIN_CHECK', 'Kimi', 'PHONE_NUMBER', 'DESENSITIZE_AND_ALLOW', 'LOW', 'NONE', 'DESENSITIZE_AND_SEND', '这段推广文案里加上联系方式：电话17600123456', '这段推广文案里加上联系方式：电话[PHONE_1]', 'h3'
+  UNION ALL
+  -- 4) 客服部张三 — 豆包 — ADDRESS+PERSON_NAME → MEDIUM，发送原文
+  SELECT 'evt-demo-004', DATEADD('MINUTE', -18, CURRENT_TIMESTAMP), 'user-m4k7x2p9', '客服部', 'BROWSER_PLUGIN', 'PLUGIN_CHECK', '豆包', 'ADDRESS,PERSON_NAME', 'DESENSITIZE_AND_ALLOW', 'MEDIUM', 'NONE', 'SEND_ORIGINAL', '收货地址：浙江省杭州市西湖区文三路500号，收件人赵六', '收货地址：[ADDRESS_1]，收件人[NAME_1]', 'h4'
+  UNION ALL
+  -- 5) 金融部赵六 — DeepSeek — 银行卡+身份证 → HIGH，阻断
+  SELECT 'evt-demo-005', DATEADD('MINUTE', -15, CURRENT_TIMESTAMP), 'user-q2w8m1', '金融部', 'BROWSER_PLUGIN', 'PLUGIN_CHECK', 'DeepSeek', 'BANK_CARD,ID_CARD', 'BLOCK', 'HIGH', 'NONE', 'CANCEL', '客户转账：工行卡号6222021234567890123，身份证320501198502031234', '客户转账：工行卡号[BANK_CARD_1]，身份证[ID_CARD_1]', 'h5'
+  UNION ALL
+  -- 6) API调用 — 研发部 — MEDIUM
+  SELECT 'evt-demo-006', DATEADD('MINUTE', -12, CURRENT_TIMESTAMP), 'dev-api-client', '研发部', 'backend-api', 'CHAT', 'DeepSeek', 'EMAIL,PHONE_NUMBER', 'DESENSITIZE_AND_ALLOW', 'MEDIUM', 'LOW', 'AUTO', '用户的联系方式是zhangsan@example.com，电话13900000001', '用户的联系方式是[EMAIL_1]，电话[PHONE_1]', 'h6'
+  UNION ALL
+  -- 7) API调用 — 客服部 — LOW
+  SELECT 'evt-demo-007', DATEADD('MINUTE', -8, CURRENT_TIMESTAMP), 'evt-app-cs', '客服部', 'backend-api', 'CHAT', '通义千问', 'PHONE_NUMBER', 'ALLOW', 'LOW', 'NONE', 'AUTO', '请帮我查询订单 #123456 的物流状态', '请帮我查询订单 #123456 的物流状态', 'h7'
+  UNION ALL
+  -- 8) 市场部王五 — ChatGPT — ADDRESS+PERSON_NAME → MEDIUM，取消
+  SELECT 'evt-demo-008', DATEADD('MINUTE', -5, CURRENT_TIMESTAMP), 'user-p1z7v3', '市场部', 'BROWSER_PLUGIN', 'PLUGIN_CHECK', 'ChatGPT', 'ADDRESS,PERSON_NAME', 'BLOCK', 'MEDIUM', 'NONE', 'CANCEL', '帮我分析这个区域的客户分布：北京市海淀区中关村大街1号，负责人周八', '帮我分析这个区域的客户分布：[ADDRESS_1]，负责人[NAME_1]', 'h8'
+  UNION ALL
+  -- 9) API调用 — 研发部 — ID_CARD → HIGH
+  SELECT 'evt-demo-009', DATEADD('MINUTE', -3, CURRENT_TIMESTAMP), 'dev-api-client', '研发部', 'backend-api', 'CHAT', 'DeepSeek', 'ID_CARD', 'BLOCK', 'HIGH', 'NONE', 'AUTO', '测试用户身份证号：440101199912311234', '测试用户身份证号：[ID_CARD_1]', 'h9'
+  UNION ALL
+  -- 10) 财务部陈九 — Kimi — BANK_CARD → HIGH，取消
+  SELECT 'evt-demo-010', DATEADD('MINUTE', -1, CURRENT_TIMESTAMP), 'user-k5v9s2', '财务部', 'BROWSER_PLUGIN', 'PLUGIN_CHECK', 'Kimi', 'BANK_CARD', 'BLOCK', 'HIGH', 'NONE', 'CANCEL', '付款账号：招行6217001234567890，请核对', '付款账号：招行[BANK_CARD_1]，请核对', 'h10'
+) AS t
+WHERE NOT EXISTS (SELECT 1 FROM gateway_audit_event WHERE event_id = t.event_id);

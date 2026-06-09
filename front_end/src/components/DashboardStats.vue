@@ -85,6 +85,12 @@
     );
     return item?.cnt ?? 0;
   }
+  function decisionCount(action) {
+    const item = stats.value.byDecision?.find(
+      (d) => d.decision_action === action,
+    );
+    return item?.cnt ?? 0;
+  }
 
   const riskChartData = computed(() => {
     const levels = ["NONE", "LOW", "MEDIUM", "HIGH"];
@@ -149,7 +155,7 @@
     <!-- 指标卡片 -->
     <div class="stats-row">
       <div class="stat-card primary">
-        <div class="label">今日拦截</div>
+        <div class="label">今日事件</div>
         <div class="value">{{ stats.todayTotal }}</div>
       </div>
       <div class="stat-card plugin">
@@ -163,6 +169,10 @@
       <div class="stat-card danger">
         <div class="label">高风险</div>
         <div class="value">{{ riskCount("HIGH") }}</div>
+      </div>
+      <div class="stat-card block">
+        <div class="label">今日阻断</div>
+        <div class="value">{{ decisionCount("BLOCK") }}</div>
       </div>
     </div>
 
@@ -343,9 +353,19 @@
 
   .stats-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 14px;
     margin-bottom: 24px;
+  }
+  @media (max-width: 1100px) {
+    .stats-row {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+  @media (max-width: 700px) {
+    .stats-row {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
   .stat-card {
     border-radius: 12px;
@@ -389,6 +409,13 @@
   }
   .stat-card.danger .value {
     color: #dc2626;
+  }
+  .stat-card.block {
+    background: #fefce8;
+    border-color: #fde047;
+  }
+  .stat-card.block .value {
+    color: #ca8a04;
   }
 
   .charts-row {
