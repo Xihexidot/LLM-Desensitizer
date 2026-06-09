@@ -1,206 +1,96 @@
 package com.hdu.apisensitivities.controller;
 
+import com.hdu.apisensitivities.entity.LlmProvider;
 import com.hdu.apisensitivities.entity.gateway.GatewayAuditEvent;
 import com.hdu.apisensitivities.entity.gateway.GatewayFileTaskInfo;
-import com.hdu.apisensitivities.entity.gateway.GatewayInvocationContext;
-import com.hdu.apisensitivities.entity.gateway.GatewayRequest;
-import com.hdu.apisensitivities.entity.gateway.GatewayResponse;
-import com.hdu.apisensitivities.entity.gateway.GatewayRiskDecision;
-import com.hdu.apisensitivities.entity.gateway.GatewayRiskLevel;
 import com.hdu.apisensitivities.repository.GatewayAuditRepository;
 import com.hdu.apisensitivities.service.gateway.EnterpriseGatewayApplicationService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @RestController
 @RequestMapping("/gateway/v1")
-@RequiredArgsConstructor
 public class EnterpriseGatewayController {
 
-        private final EnterpriseGatewayApplicationService enterpriseGatewayApplicationService;
-        private final GatewayAuditRepository auditRepository;
+    private final EnterpriseGatewayApplicationService gatewayService;
+    private final GatewayAuditRepository auditRepository;
 
-        @PostMapping("/chat")
-        public ResponseEntity<GatewayResponse> chat(
-                        @RequestBody GatewayRequest request,
-                        @RequestHeader(value = "Authorization", required = false) String authorization,
-                        @RequestHeader(value = "X-App-Id", required = false) String appId,
-                        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
-                        @RequestHeader(value = "X-Tenant-Id", required = false) String tenantId,
-                        @RequestHeader(value = "X-Channel", required = false) String channel,
-                        @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
-                        @RequestHeader(value = "X-User-Id", required = false) String userId,
-                        @RequestHeader(value = "X-User-Role", required = false) String userRole,
-                        @RequestHeader(value = "X-Department", required = false) String department,
-                        @RequestHeader(value = "X-Scene-Code", required = false) String sceneCode,
-                        @RequestHeader(value = "X-Environment", required = false) String environment) {
-                GatewayInvocationContext context = buildInvocationContext(authorization, appId, requestId, tenantId,
-                                channel,
-                                traceId, userId, userRole, department, sceneCode, environment);
-                return ResponseEntity.ok(enterpriseGatewayApplicationService.processChat(request, context));
+    public EnterpriseGatewayController(EnterpriseGatewayApplicationService gatewayService,
+            GatewayAuditRepository auditRepository) {
+        this.gatewayService = gatewayService;
+        this.auditRepository = auditRepository;
+    }
+
+    // ========== OpenAI 兼容端点 ==========
+
+    @PostMapping("/chat/completions")
+    public ResponseEntity<Map<String, Object>> chatCompletions(
+            @RequestBody Map<String, Object> body,
+            @RequestHeader Map<String, String> headers) {
+
+        String content = EnterpriseGatewayApplicationService.extractContentFromMessages(body.get("messages"));
+        if (content.isBlank()) {
+            Map<String, Object> err = new HashMap<>();
+            err.put("error", Map.of("message", "messages 中未找到有效 content"));
+            return ResponseEntity.badRequest().body(err);
         }
 
-        @PostMapping("/structured")
-        public ResponseEntity<GatewayResponse> structured(
-                        @RequestBody GatewayRequest request,
-                        @RequestHeader(value = "Authorization", required = false) String authorization,
-                        @RequestHeader(value = "X-App-Id", required = false) String appId,
-                        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
-                        @RequestHeader(value = "X-Tenant-Id", required = false) String tenantId,
-                        @RequestHeader(value = "X-Channel", required = false) String channel,
-                        @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
-                        @RequestHeader(value = "X-User-Id", required = false) String userId,
-                        @RequestHeader(value = "X-User-Role", required = false) String userRole,
-                        @RequestHeader(value = "X-Department", required = false) String department,
-                        @RequestHeader(value = "X-Scene-Code", required = false) String sceneCode,
-                        @RequestHeader(value = "X-Environment", required = false) String environment) {
-                GatewayInvocationContext context = buildInvocationContext(authorization, appId, requestId, tenantId,
-                                channel,
-                                traceId, userId, userRole, department, sceneCode, environment);
-                return ResponseEntity.ok(enterpriseGatewayApplicationService.processStructured(request, context));
-        }
+        String model = body.get("model") instanceof String s ? s : null;
+        LlmProvider provider = EnterpriseGatewayApplicationService.resolveProviderFromModel(model);
 
-        @PostMapping("/files/tasks")
-        public ResponseEntity<GatewayResponse> createFileTask(
-                        @RequestParam("fileName") String fileName,
-                        @RequestParam(value = "sceneCode", required = false) String sceneCode,
-                        @RequestHeader(value = "Authorization", required = false) String authorization,
-                        @RequestHeader(value = "X-App-Id", required = false) String appId,
-                        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
-                        @RequestHeader(value = "X-Tenant-Id", required = false) String tenantId,
-                        @RequestHeader(value = "X-Channel", required = false) String channel,
-                        @RequestHeader(value = "X-Trace-Id", required = false) String traceId,
-                        @RequestHeader(value = "X-User-Id", required = false) String userId,
-                        @RequestHeader(value = "X-User-Role", required = false) String userRole,
-                        @RequestHeader(value = "X-Department", required = false) String department,
-                        @RequestHeader(value = "X-Environment", required = false) String environment) {
-                GatewayInvocationContext context = buildInvocationContext(authorization, appId, requestId, tenantId,
-                                channel,
-                                traceId, userId, userRole, department, sceneCode, environment);
-                return ResponseEntity
-                                .ok(enterpriseGatewayApplicationService.createFileTask(fileName, sceneCode, context));
-        }
+        Map<String, String> userHeaders = new HashMap<>();
+        userHeaders.put("userId", headers.getOrDefault("x-user-id", headers.getOrDefault("X-User-Id", "")));
+        userHeaders.put("department", headers.getOrDefault("x-department", headers.getOrDefault("X-Department", "")));
+        userHeaders.put("channel", headers.getOrDefault("x-channel", headers.getOrDefault("X-Channel", "backend-api")));
+        userHeaders.put("tenantId", headers.getOrDefault("x-tenant-id", headers.getOrDefault("X-Tenant-Id", "default")));
+        userHeaders.put("appId", headers.getOrDefault("x-app-id", headers.getOrDefault("X-App-Id", "default")));
 
-        @GetMapping("/files/tasks/{taskId}")
-        public ResponseEntity<GatewayResponse> getFileTask(
-                        @PathVariable String taskId,
-                        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
-                        @RequestHeader(value = "X-Trace-Id", required = false) String traceId) {
-                return enterpriseGatewayApplicationService.getFileTask(taskId)
-                                .map(task -> ResponseEntity.ok(buildFileTaskResponse(task, requestId, traceId)))
-                                .orElseGet(() -> ResponseEntity.ok(buildNotFoundResponse(requestId, traceId, taskId)));
-        }
+        Map<String, Object> result = gatewayService.processChatCompletions(content, provider, userHeaders);
+        return ResponseEntity.ok(result);
+    }
 
-        @GetMapping("/audit/events")
-        public ResponseEntity<GatewayResponse> getAuditEvents(
-                        @RequestParam(value = "appId", required = false) String appId,
-                        @RequestParam(value = "userId", required = false) String userId,
-                        @RequestParam(value = "decisionAction", required = false) String decisionAction,
-                        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
-                        @RequestHeader(value = "X-Trace-Id", required = false) String traceId) {
-                List<GatewayAuditEvent> events = enterpriseGatewayApplicationService.queryAuditEvents(appId, userId,
-                                decisionAction);
-                Map<String, Object> data = new HashMap<>();
-                data.put("items", events);
-                data.put("total", events.size());
+    // ========== 文件任务 ==========
 
-                return ResponseEntity.ok(GatewayResponse.builder()
-                                .code("GW-0000")
-                                .message("success")
-                                .requestId(requestId)
-                                .traceId(traceId)
-                                .success(true)
-                                .data(data)
-                                .risk(GatewayRiskDecision.builder()
-                                                .riskLevel(GatewayRiskLevel.NONE)
-                                                .decisionAction(null)
-                                                .build())
-                                .build());
-        }
+    @PostMapping("/files/tasks")
+    public ResponseEntity<GatewayFileTaskInfo> createFileTask(@RequestBody Map<String, Object> body) {
+        String fileName = body.getOrDefault("fileName", "unknown").toString();
+        String sceneCode = body.getOrDefault("sceneCode", "default").toString();
+        String userId = body.getOrDefault("userId", "unknown").toString();
+        String department = body.getOrDefault("department", "").toString();
+        String tenantId = body.getOrDefault("tenantId", "default").toString();
+        String appId = body.getOrDefault("appId", "default").toString();
+        return ResponseEntity.ok(gatewayService.createFileTask(fileName, sceneCode, userId, department, tenantId, appId));
+    }
 
-        @GetMapping("/audit/stats")
-        public ResponseEntity<Map<String, Object>> getAuditStats() {
-                return ResponseEntity.ok(auditRepository.getStats());
-        }
+    @GetMapping("/files/tasks/{taskId}")
+    public ResponseEntity<GatewayFileTaskInfo> getFileTask(@PathVariable String taskId) {
+        return gatewayService.getFileTask(taskId)
+                .map(ResponseEntity::ok)
+                .orElse(ResponseEntity.notFound().build());
+    }
 
-        @GetMapping("/audit/events/{eventId}")
-        public ResponseEntity<GatewayResponse> getAuditEventDetail(
-                        @PathVariable String eventId,
-                        @RequestHeader(value = "X-Request-Id", required = false) String requestId,
-                        @RequestHeader(value = "X-Trace-Id", required = false) String traceId) {
-                return auditRepository.findById(eventId)
-                        .map(event -> {
-                                Map<String, Object> data = new HashMap<>();
-                                data.put("item", event);
-                                return ResponseEntity.ok(GatewayResponse.builder()
-                                        .code("GW-0000").message("success")
-                                        .requestId(requestId).traceId(traceId).success(true)
-                                        .data(data).risk(GatewayRiskDecision.builder()
-                                                .riskLevel(GatewayRiskLevel.NONE).build()).build());
-                        })
-                        .orElseGet(() -> ResponseEntity.ok(GatewayResponse.builder()
-                                .code("GW-0404").message("审计事件不存在")
-                                .requestId(requestId).traceId(traceId).success(false)
-                                .data(Map.of()).risk(GatewayRiskDecision.builder()
-                                        .riskLevel(GatewayRiskLevel.NONE).build()).build()));
-        }
+    // ========== 审计查询 ==========
 
-        private GatewayInvocationContext buildInvocationContext(String authorization, String appId, String requestId,
-                        String tenantId, String channel, String traceId, String userId, String userRole,
-                        String department,
-                        String sceneCode, String environment) {
-                return GatewayInvocationContext.builder()
-                                .authorization(authorization)
-                                .appId(appId)
-                                .requestId(requestId)
-                                .tenantId(tenantId)
-                                .channel(channel != null ? channel : "backend-api")
-                                .traceId(traceId)
-                                .userId(userId)
-                                .userRole(userRole)
-                                .department(department)
-                                .sceneCode(sceneCode)
-                                .environment(environment != null ? environment : "prod")
-                                .build();
-        }
+    @GetMapping("/audit/events")
+    public ResponseEntity<List<GatewayAuditEvent>> queryAuditEvents(
+            @RequestParam(required = false) String appId,
+            @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String decisionAction) {
+        return ResponseEntity.ok(gatewayService.queryAuditEvents(appId, userId, decisionAction));
+    }
 
-        private GatewayResponse buildFileTaskResponse(GatewayFileTaskInfo task, String requestId, String traceId) {
-                return GatewayResponse.builder()
-                                .code("GW-0000")
-                                .message("success")
-                                .requestId(requestId)
-                                .traceId(traceId)
-                                .success(true)
-                                .data(task)
-                                .risk(GatewayRiskDecision.builder()
-                                                .riskLevel(GatewayRiskLevel.LOW)
-                                                .decisionAction(task.getDecisionAction())
-                                                .build())
-                                .build();
-        }
+    @GetMapping("/audit/events/{eventId}")
+    public ResponseEntity<Optional<GatewayAuditEvent>> getAuditEvent(@PathVariable String eventId) {
+        return ResponseEntity.ok(auditRepository.findById(eventId));
+    }
 
-        private GatewayResponse buildNotFoundResponse(String requestId, String traceId, String taskId) {
-                return GatewayResponse.builder()
-                                .code("GW-2001")
-                                .message("task not found: " + taskId)
-                                .requestId(requestId)
-                                .traceId(traceId)
-                                .success(false)
-                                .risk(GatewayRiskDecision.builder()
-                                                .riskLevel(GatewayRiskLevel.NONE)
-                                                .build())
-                                .build();
-        }
+    @GetMapping("/audit/stats")
+    public ResponseEntity<Map<String, Object>> getAuditStats() {
+        return ResponseEntity.ok(auditRepository.getStats());
+    }
 }

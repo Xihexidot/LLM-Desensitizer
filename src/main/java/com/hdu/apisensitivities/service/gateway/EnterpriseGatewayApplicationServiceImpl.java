@@ -7,9 +7,6 @@ import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.gateway.GatewayAuditEvent;
 import com.hdu.apisensitivities.entity.gateway.GatewayDecisionAction;
 import com.hdu.apisensitivities.entity.gateway.GatewayFileTaskInfo;
-import com.hdu.apisensitivities.entity.gateway.GatewayInvocationContext;
-import com.hdu.apisensitivities.entity.gateway.GatewayRequest;
-import com.hdu.apisensitivities.entity.gateway.GatewayResponse;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskDecision;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskLevel;
 import com.hdu.apisensitivities.entity.gateway.GatewayTaskStatus;
@@ -25,7 +22,6 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,7 +36,6 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
 
     private static final String DEFAULT_POLICY_ID = "policy-default";
     private static final String DEFAULT_POLICY_VERSION = "skeleton-v1";
-    private static final String DEFAULT_CHANNEL = "backend-api";
     private static final int MAX_FILE_TASKS = 500;
     private static final Duration FILE_TASK_TTL = Duration.ofHours(24);
 
@@ -49,55 +44,79 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
     private final Map<String, GatewayFileTaskInfo> fileTasks = new ConcurrentHashMap<>();
     private final Map<String, Instant> fileTaskCreatedAt = new ConcurrentHashMap<>();
 
+    // ========== OpenAI 兼容端点 ==========
+
     @Override
-    public GatewayResponse processChat(GatewayRequest request, GatewayInvocationContext invocationContext) {
-        String content = request != null && request.getInput() != null ? request.getInput().getContent() : null;
-        LlmProvider provider = resolveProvider(request);
-        LlmResponse llmResponse = llmProxyService.processLlmRequest(buildLlmRequest(request, content, provider));
+    public Map<String, Object> processChatCompletions(String content, LlmProvider provider,
+            Map<String, String> headers) {
+        String userId = headers.getOrDefault("userId", "unknown");
+        String department = headers.getOrDefault("department", "");
+        String channel = headers.getOrDefault("channel", "backend-api");
+        String tenantId = headers.getOrDefault("tenantId", "default");
+        String appId = headers.getOrDefault("appId", "default");
+
+        LlmResponse llmResponse = llmProxyService.processLlmRequest(
+                LlmRequest.builder()
+                        .provider(provider)
+                        .prompt(content)
+                        .sessionId("gw-" + System.currentTimeMillis())
+                        .dataType("TEXT")
+                        .build());
 
         List<String> matchedTypes = extractMatchedTypes(llmResponse.getInputSensitiveEntities());
         GatewayRiskDecision riskDecision = buildRiskDecision(matchedTypes, provider.name(), llmResponse.isSuccess());
-        GatewayAuditEvent auditEvent = buildAuditEvent(invocationContext, "CHAT", provider.name(), matchedTypes,
-                riskDecision, content, llmResponse.getDesensitizedResponse());
+
+        GatewayAuditEvent auditEvent = GatewayAuditEvent.builder()
+                .eventId("evt-" + UUID.randomUUID())
+                .timestamp(Instant.now())
+                .tenantId(tenantId)
+                .appId(appId)
+                .userId(userId)
+                .department(department)
+                .channel(channel)
+                .requestType("CHAT")
+                .targetProvider(normalizeProviderName(provider.name()))
+                .targetModel(normalizeProviderName(provider.name()))
+                .matchedSensitiveTypes(matchedTypes)
+                .decisionAction(riskDecision.getDecisionAction())
+                .inputRiskLevel(riskDecision.getRiskLevel())
+                .outputRiskLevel(GatewayRiskLevel.NONE)
+                .originalContent(content)
+                .processedContent(llmResponse.getDesensitizedResponse())
+                .requestHash(hashPayload(content))
+                .responseHash(hashPayload(llmResponse.getDesensitizedResponse()))
+                .build();
         auditRepository.save(auditEvent);
 
-        Map<String, Object> data = new HashMap<>();
-        data.put("provider", provider.name());
-        data.put("actualRoute", riskDecision.getRouteTarget());
-        data.put("originalPrompt", content);
-        data.put("processedPrompt", resolveProcessedPrompt(content, llmResponse));
-        data.put("responseText", llmResponse.isSuccess() ? llmResponse.getDesensitizedResponse() : null);
-        data.put("processingTimeMs", llmResponse.getProcessingTimeMs());
-        data.put("errorMessage", llmResponse.getErrorMessage());
+        String responseText = llmResponse.isSuccess()
+                ? llmResponse.getDesensitizedResponse()
+                : "Error: " + llmResponse.getErrorMessage();
 
-        return buildGatewayResponse(invocationContext, llmResponse.isSuccess(),
-                llmResponse.isSuccess() ? "success" : llmResponse.getErrorMessage(),
-                data, riskDecision, auditEvent.getEventId());
+        Map<String, Object> result = new HashMap<>();
+        result.put("id", "chatcmpl-" + auditEvent.getEventId());
+        result.put("object", "chat.completion");
+        result.put("model", provider.name().toLowerCase());
+        result.put("choices", List.of(Map.of(
+                "index", 0,
+                "message", Map.of("role", "assistant", "content", responseText),
+                "finish_reason", llmResponse.isSuccess() ? "stop" : "error")));
+        result.put("usage", Map.of(
+                "prompt_tokens", content.length(),
+                "completion_tokens", responseText.length(),
+                "total_tokens", content.length() + responseText.length()));
+        result.put("_audit", Map.of(
+                "eventId", auditEvent.getEventId(),
+                "riskLevel", riskDecision.getRiskLevel().name(),
+                "decisionAction", riskDecision.getDecisionAction().name(),
+                "matchedTypes", matchedTypes));
+        return result;
     }
 
-    @Override
-    public GatewayResponse processStructured(GatewayRequest request, GatewayInvocationContext invocationContext) {
-        Map<String, Object> structuredData = request != null && request.getInput() != null
-                ? request.getInput().getStructuredData()
-                : Collections.emptyMap();
-        String serialized = structuredData != null ? structuredData.toString() : "";
-        GatewayRequest normalizedRequest = request != null ? request : new GatewayRequest();
-        if (normalizedRequest.getInput() == null) {
-            normalizedRequest.setInput(GatewayRequest.InputPayload.builder().type("STRUCTURED").build());
-        }
-        normalizedRequest.getInput().setContent(serialized);
-        GatewayResponse response = processChat(normalizedRequest, invocationContext);
-        if (response.getData() instanceof Map<?, ?> dataMap) {
-            @SuppressWarnings("unchecked")
-            Map<String, Object> mutable = (Map<String, Object>) dataMap;
-            mutable.put("structuredInput", structuredData);
-        }
-        return response;
-    }
+    // ========== 文件任务 ==========
 
     @Override
-    public GatewayResponse createFileTask(String fileName, String sceneCode,
-            GatewayInvocationContext invocationContext) {
+    public GatewayFileTaskInfo createFileTask(String fileName, String sceneCode, String userId, String department,
+            String tenantId, String appId) {
         cleanupExpiredFileTasks();
         enforceFileTaskCapacity();
 
@@ -117,19 +136,21 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
         GatewayRiskDecision riskDecision = GatewayRiskDecision.builder()
                 .riskLevel(GatewayRiskLevel.LOW)
                 .decisionAction(GatewayDecisionAction.ASYNC_REVIEW)
-                .matchedTypes(List.of())
-                .matchedRules(List.of())
-                .policyId(DEFAULT_POLICY_ID)
-                .policyVersion(DEFAULT_POLICY_VERSION)
-                .routeTarget(null)
-                .needApproval(false)
+                .matchedTypes(List.of()).matchedRules(List.of())
+                .policyId(DEFAULT_POLICY_ID).policyVersion(DEFAULT_POLICY_VERSION)
+                .routeTarget(null).needApproval(false).build();
+        GatewayAuditEvent auditEvent = GatewayAuditEvent.builder()
+                .eventId("evt-" + UUID.randomUUID())
+                .timestamp(Instant.now())
+                .tenantId(tenantId).appId(appId).userId(userId).department(department)
+                .channel("backend-api").requestType("FILE_TASK")
+                .decisionAction(GatewayDecisionAction.ASYNC_REVIEW)
+                .inputRiskLevel(GatewayRiskLevel.LOW).outputRiskLevel(GatewayRiskLevel.NONE)
+                .originalContent(fileName).processedContent(taskId)
                 .build();
-        GatewayAuditEvent auditEvent = buildAuditEvent(invocationContext, "FILE_TASK", null, List.of(), riskDecision,
-                fileName, taskId);
         auditRepository.save(auditEvent);
 
-        return buildGatewayResponse(invocationContext, true, "task accepted", taskInfo, riskDecision,
-                auditEvent.getEventId());
+        return taskInfo;
     }
 
     @Override
@@ -143,40 +164,14 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
         return auditRepository.query(appId, userId, decisionAction, 200);
     }
 
-    private LlmRequest buildLlmRequest(GatewayRequest request, String content, LlmProvider provider) {
-        String sessionId = request != null && request.getRequestContext() != null
-                ? request.getRequestContext().getSessionId()
-                : null;
-        return LlmRequest.builder()
-                .provider(provider)
-                .prompt(content)
-                .sessionId(sessionId != null ? sessionId : "gateway-" + System.currentTimeMillis())
-                .dataType("TEXT")
-                .build();
-    }
-
-    private LlmProvider resolveProvider(GatewayRequest request) {
-        String preferred = request != null && request.getProvider() != null ? request.getProvider().getPreferred()
-                : null;
-        if (preferred == null || preferred.isBlank()) {
-            return LlmProvider.DEEPSEEK;
-        }
-
-        try {
-            return LlmProvider.valueOf(preferred.toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            return LlmProvider.DEEPSEEK;
-        }
-    }
+    // ========== 内部方法 ==========
 
     private List<String> extractMatchedTypes(List<SensitiveEntity> entities) {
-        if (entities == null || entities.isEmpty()) {
+        if (entities == null || entities.isEmpty())
             return List.of();
-        }
         return entities.stream()
                 .map(entity -> entity.getType() != null ? entity.getType().name() : "UNKNOWN")
-                .distinct()
-                .collect(Collectors.toList());
+                .distinct().collect(Collectors.toList());
     }
 
     private GatewayRiskDecision buildRiskDecision(List<String> matchedTypes, String routeTarget, boolean success) {
@@ -188,169 +183,40 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
                     .routeTarget(routeTarget).needApproval(false).build();
         }
 
-        // 使用统一 RiskScorer 评分
         int[] scoreResult = new int[2];
         RiskScorer.scoreWithLevel(matchedTypes, scoreResult);
-        int score = scoreResult[0];
         String riskLevelName = RiskScorer.levelName(scoreResult[1]);
 
-        // 默认可从 RiskPolicyController 读取全局配置
         RiskPolicyController.PolicyConfig config = RiskPolicyController.getCurrentConfig();
         String defaultAction = config.global != null ? config.global.defaultAction : "DESENSITIZE_AND_ALLOW";
         int maxCount = config.global != null ? config.global.maxSensitiveCount : 5;
 
-        // 命中类型数超过全局阈值时强制阻断
         if (matchedTypes != null && matchedTypes.size() > maxCount) {
             riskLevelName = "HIGH";
             defaultAction = "BLOCK";
         }
 
-        GatewayRiskLevel riskLevel;
-        switch (riskLevelName) {
-            case "CRITICAL":
-                riskLevel = GatewayRiskLevel.CRITICAL;
-                break;
-            case "HIGH":
-                riskLevel = GatewayRiskLevel.HIGH;
-                break;
-            case "MEDIUM":
-                riskLevel = GatewayRiskLevel.MEDIUM;
-                break;
-            case "LOW":
-                riskLevel = GatewayRiskLevel.LOW;
-                break;
-            default:
-                riskLevel = GatewayRiskLevel.NONE;
-                break;
-        }
+        GatewayRiskLevel riskLevel = switch (riskLevelName) {
+            case "CRITICAL" -> GatewayRiskLevel.CRITICAL;
+            case "HIGH" -> GatewayRiskLevel.HIGH;
+            case "MEDIUM" -> GatewayRiskLevel.MEDIUM;
+            case "LOW" -> GatewayRiskLevel.LOW;
+            default -> GatewayRiskLevel.NONE;
+        };
 
-        GatewayDecisionAction decisionAction;
-        switch (defaultAction) {
-            case "BLOCK":
-                decisionAction = GatewayDecisionAction.BLOCK;
-                break;
-            case "ALLOW":
-                decisionAction = GatewayDecisionAction.ALLOW;
-                break;
-            default:
-                decisionAction = GatewayDecisionAction.DESENSITIZE_AND_ALLOW;
-                break;
-        }
+        GatewayDecisionAction decisionAction = switch (defaultAction) {
+            case "BLOCK" -> GatewayDecisionAction.BLOCK;
+            case "ALLOW" -> GatewayDecisionAction.ALLOW;
+            default -> GatewayDecisionAction.DESENSITIZE_AND_ALLOW;
+        };
 
         return GatewayRiskDecision.builder()
-                .riskLevel(riskLevel)
-                .decisionAction(decisionAction)
-                .matchedTypes(matchedTypes)
-                .matchedRules(List.of())
-                .policyId(DEFAULT_POLICY_ID)
-                .policyVersion(DEFAULT_POLICY_VERSION)
-                .routeTarget(routeTarget)
-                .needApproval(false)
-                .build();
+                .riskLevel(riskLevel).decisionAction(decisionAction)
+                .matchedTypes(matchedTypes).matchedRules(List.of())
+                .policyId(DEFAULT_POLICY_ID).policyVersion(DEFAULT_POLICY_VERSION)
+                .routeTarget(routeTarget).needApproval(false).build();
     }
 
-    private GatewayAuditEvent buildAuditEvent(GatewayInvocationContext invocationContext, String requestType,
-            String targetProvider, List<String> matchedTypes, GatewayRiskDecision riskDecision, String requestPayload,
-            String responsePayload) {
-        String normalizedProvider = normalizeProviderName(targetProvider);
-        return GatewayAuditEvent.builder()
-                .eventId("evt-" + UUID.randomUUID())
-                .timestamp(Instant.now())
-                .tenantId(invocationContext.getTenantId())
-                .appId(invocationContext.getAppId())
-                .userId(invocationContext.getUserId())
-                .department(invocationContext.getDepartment())
-                .channel(invocationContext.getChannel())
-                .requestType(requestType)
-                .targetProvider(normalizedProvider)
-                .targetModel(normalizedProvider)
-                .sceneCode(invocationContext.getSceneCode())
-                .matchedSensitiveTypes(matchedTypes)
-                .decisionAction(riskDecision.getDecisionAction())
-                .policyId(riskDecision.getPolicyId())
-                .policyVersion(riskDecision.getPolicyVersion())
-                .inputRiskLevel(riskDecision.getRiskLevel())
-                .outputRiskLevel(riskDecision.getRiskLevel())
-                .originalContent(requestPayload)
-                .processedContent(responsePayload)
-                .requestHash(hashPayload(requestPayload))
-                .responseHash(hashPayload(responsePayload))
-                .build();
-    }
-
-    private GatewayResponse buildGatewayResponse(GatewayInvocationContext invocationContext, boolean success,
-            String message,
-            Object data, GatewayRiskDecision riskDecision, String eventId) {
-        return GatewayResponse.builder()
-                .code(success ? "GW-0000" : "GW-3001")
-                .message(message)
-                .requestId(invocationContext.getRequestId())
-                .traceId(invocationContext.getTraceId())
-                .success(success)
-                .data(data)
-                .risk(riskDecision)
-                .audit(GatewayResponse.AuditSummary.builder()
-                        .eventId(eventId)
-                        .inputRiskLevel(riskDecision.getRiskLevel())
-                        .outputRiskLevel(riskDecision.getRiskLevel())
-                        .build())
-                .build();
-    }
-
-    private void cleanupExpiredFileTasks() {
-        Instant expireBefore = Instant.now().minus(FILE_TASK_TTL);
-        fileTaskCreatedAt.entrySet().removeIf(entry -> {
-            boolean expired = entry.getValue().isBefore(expireBefore);
-            if (expired) {
-                fileTasks.remove(entry.getKey());
-            }
-            return expired;
-        });
-    }
-
-    private void enforceFileTaskCapacity() {
-        while (fileTasks.size() >= MAX_FILE_TASKS && !fileTaskCreatedAt.isEmpty()) {
-            String oldestTaskId = fileTaskCreatedAt.entrySet().stream()
-                    .min(Comparator.comparing(Map.Entry::getValue))
-                    .map(Map.Entry::getKey)
-                    .orElse(null);
-            if (oldestTaskId == null) {
-                break;
-            }
-            fileTasks.remove(oldestTaskId);
-            fileTaskCreatedAt.remove(oldestTaskId);
-        }
-    }
-
-    private String resolveProcessedPrompt(String originalContent, LlmResponse llmResponse) {
-        if (llmResponse == null) {
-            return originalContent;
-        }
-        String desensitizedPrompt = llmResponse.getDesensitizedResponse();
-        return desensitizedPrompt != null ? desensitizedPrompt : originalContent;
-    }
-
-    private String hashPayload(String payload) {
-        if (payload == null) {
-            return null;
-        }
-        try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
-            StringBuilder hex = new StringBuilder(hashBytes.length * 2);
-            for (byte hashByte : hashBytes) {
-                hex.append(String.format("%02x", hashByte));
-            }
-            return hex.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 algorithm is not available", e);
-        }
-    }
-
-    /**
-     * 将 Java 枚举名映射为人类可读平台名，确保与插件端 detectCurrentProvider 输出一致。
-     * 已经可读的名称（插件端传入的）原样返回。
-     */
     private static String normalizeProviderName(String raw) {
         if (raw == null || raw.isBlank())
             return raw;
@@ -365,5 +231,43 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
             case "OLLAMA" -> "Ollama (本地)";
             default -> raw;
         };
+    }
+
+    private String hashPayload(String payload) {
+        if (payload == null)
+            return null;
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashBytes = digest.digest(payload.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hashBytes)
+                sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 algorithm is not available", e);
+        }
+    }
+
+    private void cleanupExpiredFileTasks() {
+        Instant expireBefore = Instant.now().minus(FILE_TASK_TTL);
+        fileTaskCreatedAt.entrySet().removeIf(entry -> {
+            if (entry.getValue().isBefore(expireBefore)) {
+                fileTasks.remove(entry.getKey());
+                return true;
+            }
+            return false;
+        });
+    }
+
+    private void enforceFileTaskCapacity() {
+        while (fileTasks.size() >= MAX_FILE_TASKS && !fileTaskCreatedAt.isEmpty()) {
+            fileTaskCreatedAt.entrySet().stream()
+                    .min(Comparator.comparing(Map.Entry::getValue))
+                    .map(Map.Entry::getKey)
+                    .ifPresent(key -> {
+                        fileTasks.remove(key);
+                        fileTaskCreatedAt.remove(key);
+                    });
+        }
     }
 }
