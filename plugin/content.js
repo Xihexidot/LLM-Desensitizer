@@ -132,16 +132,27 @@ async function reviewAndContinue({ input, trigger, content }) {
 
 function notifyConfirmAction(auditEventId, userAction) {
   if (!auditEventId) return;
-  const CONFIRM_API_URL = "http://127.0.0.1:8080/plugin/confirm-action";
-  try {
-    fetch(CONFIRM_API_URL, {
+  getBaseUrl().then(baseUrl => {
+    fetch(`${baseUrl}/plugin/confirm-action`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ auditEventId, userAction }),
     }).catch(() => {});
-    showActionToast(userAction);
+  }).catch(() => {});
+  showActionToast(userAction);
+}
+
+async function getBaseUrl() {
+  try {
+    const result = await chrome.storage.local.get("ai-guard-gateway");
+    let raw = result["ai-guard-gateway"];
+    if (!raw) return "http://127.0.0.1:8080";
+    if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
+      raw = "http://" + raw;
+    }
+    return raw;
   } catch {
-    // fire-and-forget
+    return "http://127.0.0.1:8080";
   }
 }
 

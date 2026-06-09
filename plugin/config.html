@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI 输入安全助手 - 配置</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { width: 320px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f8fafc; padding: 16px; }
+    h2 { font-size: 1rem; color: #1e293b; margin-bottom: 4px; }
+    .sub { font-size: 0.72rem; color: #94a3b8; margin-bottom: 14px; }
+    .row { margin-bottom: 12px; }
+    .row label { display: block; font-size: 0.8rem; color: #475569; margin-bottom: 4px; font-weight: 500; }
+    .row input, .row select { width: 100%; padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.85rem; }
+    .row input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
+    .actions { display: flex; gap: 8px; margin-top: 16px; }
+    button { flex: 1; padding: 8px 0; border-radius: 8px; border: none; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
+    .btn-save { background: #6366f1; color: #fff; }
+    .btn-save:hover { background: #4f46e5; }
+    .btn-test { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .btn-test:hover { background: #e2e8f0; }
+    .status { font-size: 0.78rem; margin-top: 10px; min-height: 20px; }
+    .status.ok { color: #059669; }
+    .status.err { color: #dc2626; }
+    .tip { font-size: 0.7rem; color: #94a3b8; margin-top: 10px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h2>AI 输入安全助手</h2>
+  <p class="sub">配置网关服务器地址与员工身份</p>
+
+  <div class="row">
+    <label>网关服务器 IP:端口</label>
+    <input type="text" id="gateway" placeholder="192.168.1.5:8080" />
+  </div>
+  <div class="row">
+    <label>员工姓名/工号</label>
+    <input type="text" id="userName" placeholder="如：张三 / user-zhangsan" />
+  </div>
+  <div class="row">
+    <label>部门</label>
+    <input type="text" id="dept" placeholder="如：客服部" />
+  </div>
+
+  <div class="actions">
+    <button class="btn-test" id="btnTest">测试连接</button>
+    <button class="btn-save" id="btnSave">保存</button>
+  </div>
+
+  <div class="status" id="status"></div>
+  <p class="tip">员工安装插件后需在此填写姓名和部门。双机演示时，两台电脑连同一 WiFi，员工端填服务器 IP 即可。</p>
+  <p class="tip" style="color:#6366f1">企业部署：IT 管理员通过 Windows Group Policy / Mac MDM 推送工号与部门到 chrome.storage.managed，员工不可修改。</p>
+
+  <script src="config.js"></script>
+</body>
+</html>

@@ -6,6 +6,10 @@
   "permissions": [
     "storage"
   ],
+  "action": {
+    "default_title": "AI 输入安全助手",
+    "default_popup": "config.html"
+  },
   "host_permissions": [
     "https://chat.deepseek.com/*",
     "https://chatgpt.com/*",
@@ -16,7 +20,8 @@
     "https://yuanbao.tencent.com/*",
     "https://claude.ai/*",
     "https://www.perplexity.ai/*",
-    "http://127.0.0.1:8080/*"
+    "http://127.0.0.1:*/*",
+    "http://*/*"
   ],
   "background": {
     "service_worker": "background.js"
