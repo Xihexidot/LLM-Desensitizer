@@ -33,75 +33,6 @@
         >脱敏测试</a
       >
 
-      <!-- 脱敏配置板块 -->
-      <div class="nav-section">
-        <div
-          class="nav-section-title clickable"
-          @click="toggleConfig"
-        >
-          <span>脱敏配置</span>
-          <span
-            class="arrow"
-            :class="{ rotated: showConfig }"
-            >▼</span
-          >
-        </div>
-
-        <div
-          v-show="showConfig"
-          class="nav-section-content"
-        >
-          <!-- 情景感知设置 -->
-          <div class="nav-sub-section">
-            <div class="nav-sub-section-title">情景感知</div>
-            <div class="setting-item">
-              <label class="switch-label">
-                <span>启用自动感知</span>
-                <div
-                  class="switch"
-                  :class="{ active: settings.autoScenario }"
-                  @click="toggleSetting('autoScenario')"
-                >
-                  <div class="switch-handle"></div>
-                </div>
-              </label>
-            </div>
-            <div
-              class="setting-item"
-              :class="{ disabled: !settings.autoScenario }"
-            >
-              <label class="switch-label">
-                <span>使用LLM增强</span>
-                <div
-                  class="switch"
-                  :class="{ active: settings.useLlm }"
-                  @click="settings.autoScenario && toggleSetting('useLlm')"
-                >
-                  <div class="switch-handle"></div>
-                </div>
-              </label>
-            </div>
-          </div>
-
-          <!-- 敏感检测板块 -->
-          <div class="nav-sub-section">
-            <div class="nav-sub-section-title">敏感检测</div>
-            <a
-              class="nav-item"
-              href="#"
-              @click.prevent="$emit('show-rules', 'add')"
-              >新增规则</a
-            >
-            <a
-              class="nav-item"
-              href="#"
-              @click.prevent="$emit('show-rules', 'manage')"
-              >管理规则</a
-            >
-          </div>
-        </div>
-      </div>
-
       <a
         class="nav-item"
         href="#"
@@ -113,12 +44,6 @@
         href="#"
         @click.prevent="$emit('show-audit')"
         >审计日志</a
-      >
-      <a
-        class="nav-item"
-        href="#"
-        @click.prevent="$emit('show-dict')"
-        >词典管理</a
       >
       <a
         class="nav-item"
@@ -201,15 +126,11 @@
   const emit = defineEmits([
     "select-history",
     "toggle-theme",
-    "update-settings",
     "check-health",
     "scroll-llm",
-    "show-rules",
     "show-home",
     "show-dashboard",
     "show-audit",
-    "show-dict",
-    "show-tool",
     "show-policy",
     "show-providers",
   ]);
@@ -217,24 +138,8 @@
     healthStatus: String,
     healthLoading: Boolean,
     histories: { type: Array, default: () => [] },
-    settings: {
-      type: Object,
-      default: () => ({ autoScenario: true, useLlm: false }),
-    },
   });
-  const currentSettings = computed(
-    () => props.settings || { autoScenario: true, useLlm: false },
-  );
   const showHistory = ref(false);
-  const showConfig = ref(false);
-
-  function toggleConfig() {
-    showConfig.value = !showConfig.value;
-  }
-
-  function toggleSetting(key) {
-    emit("update-settings", { [key]: !currentSettings.value[key] });
-  }
   const shortList = computed(() => {
     const arr = Array.isArray(props.histories) ? props.histories : [];
     const last = arr.slice(-10);

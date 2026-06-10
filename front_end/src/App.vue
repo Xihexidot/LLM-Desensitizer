@@ -1,25 +1,17 @@
 <script setup>
-  import { ref, reactive, onMounted } from "vue";
+  import { ref, onMounted } from "vue";
   import LlmDesensitization from "./components/LlmDesensitization.vue";
-  import SensitiveRules from "./components/SensitiveRules.vue";
   import Sidebar from "./components/Sidebar.vue";
   import ConversationHistory from "./components/ConversationHistory.vue";
   import DashboardStats from "./components/DashboardStats.vue";
   import AuditList from "./components/AuditList.vue";
   import AuditDetail from "./components/AuditDetail.vue";
-  import DictManagement from "./components/DictManagement.vue";
   import RiskPolicy from "./components/RiskPolicy.vue";
   import ProviderStatus from "./components/ProviderStatus.vue";
   import { API_BASE_URL } from "./config";
 
   // 视图控制 — 默认首页为仪表盘
   const currentView = ref("dashboard");
-  const initialRuleTab = ref("add");
-
-  function showRules(tab) {
-    initialRuleTab.value = tab;
-    currentView.value = "rules";
-  }
 
   function showHome() {
     currentView.value = "home";
@@ -31,10 +23,6 @@
 
   function showAudit() {
     currentView.value = "audit";
-  }
-
-  function showDict() {
-    currentView.value = "dict";
   }
 
   function showTool() {
@@ -112,16 +100,6 @@
   const THEME_KEY = "app_theme";
   const theme = ref("light");
 
-  // 情景感知设置
-  const scenarioSettings = reactive({
-    autoScenario: true,
-    useLlm: false,
-  });
-
-  function updateScenarioSettings(newSettings) {
-    Object.assign(scenarioSettings, newSettings);
-  }
-
   function loadHistory() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -198,16 +176,11 @@
       :healthStatus="healthStatus"
       :healthLoading="healthLoading"
       :histories="histories"
-      :settings="scenarioSettings"
       @select-history="jumpToHistory"
       @toggle-theme="toggleTheme"
-      @update-settings="updateScenarioSettings"
-      @show-rules="showRules"
       @show-home="showHome"
       @show-dashboard="showDashboard"
       @show-audit="showAudit"
-      @show-dict="showDict"
-      @show-tool="showTool"
       @show-policy="showPolicy"
       @show-providers="showProviders"
     />
@@ -243,13 +216,6 @@
         </div>
 
         <div
-          v-if="currentView === 'dict'"
-          class="card full-width"
-        >
-          <DictManagement />
-        </div>
-
-        <div
           v-if="currentView === 'policy'"
           class="card full-width"
         >
@@ -264,20 +230,12 @@
         </div>
 
         <div
-          v-if="currentView === 'rules'"
-          class="card full-width"
-        >
-          <SensitiveRules :initial-tab="initialRuleTab" />
-        </div>
-
-        <div
           v-if="currentView === 'tool' || currentView === 'home'"
           class="card full-width"
           id="section-llm"
         >
           <LlmDesensitization
             @conversation-completed="saveConversation"
-            :scenario-settings="scenarioSettings"
           />
         </div>
 

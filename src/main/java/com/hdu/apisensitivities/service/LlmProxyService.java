@@ -330,7 +330,16 @@ public class LlmProxyService {
                 break;
         }
 
+        applyIncludeTypesIfPresent(desensitizationRequest, request);
         return desensitizationRequest;
+    }
+
+    private void applyIncludeTypesIfPresent(DesensitizationRequest req, LlmRequest request) {
+        if (request.getIncludeTypes() != null && !request.getIncludeTypes().isEmpty()) {
+            req.setIncludeTypes(request.getIncludeTypes());
+            req.setAutoScenarioDetection(false);
+            log.debug("场景感知检测范围: {}", request.getIncludeTypes());
+        }
     }
 
     private void populateStructuredRequestContent(LlmRequest request, DesensitizationRequest desensitizationRequest) {

@@ -23,9 +23,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -55,12 +57,16 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
         String tenantId = headers.getOrDefault("tenantId", "default");
         String appId = headers.getOrDefault("appId", "default");
 
+        // 自动情景感知：根据内容关键词匹配场景 → 动态调整检测范围
+        Set<String> includeTypes = matchScenarioIncludeTypes(content);
+
         LlmResponse llmResponse = llmProxyService.processLlmRequest(
                 LlmRequest.builder()
                         .provider(provider)
                         .prompt(content)
                         .sessionId("gw-" + System.currentTimeMillis())
                         .dataType("TEXT")
+                        .includeTypes(includeTypes)
                         .build());
 
         List<String> matchedTypes = extractMatchedTypes(llmResponse.getInputSensitiveEntities());
@@ -246,6 +252,64 @@ public class EnterpriseGatewayApplicationServiceImpl implements EnterpriseGatewa
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 algorithm is not available", e);
         }
+    }
+
+    /**
+     * 基于关键词的情景感知：扫描内容 → 匹配场景 → 返回该场景应检测的敏感类型集合。
+     * 若无匹配场景则返回 null（检测所有类型）。
+     */
+    private Set<String> matchScenarioIncludeTypes(String content) {
+        if (content == null || content.isBlank())
+            return null;
+        String lower = content.toLowerCase();
+        RiskPolicyController.PolicyConfig config = RiskPolicyController.getCurrentConfig();
+        if (config.scenes == null)
+            return null;
+
+        SceneMatch best = null;
+        for (RiskPolicyController.ScenePolicy scene : config.scenes) {
+            if (!scene.enabled)
+                continue;
+            int score = keywordScore(lower, scene.sceneName);
+            if (score > 0 && (best == null || score > best.score)) {
+                best = new SceneMatch(scene, score);
+            }
+        }
+        if (best == null || best.scene.detectTypes == null || best.scene.detectTypes.isEmpty())
+            return null;
+        return new HashSet<>(best.scene.detectTypes);
+    }
+
+    private static class SceneMatch {
+        final RiskPolicyController.ScenePolicy scene;
+        final int score;
+
+        SceneMatch(RiskPolicyController.ScenePolicy scene, int score) {
+            this.scene = scene;
+            this.score = score;
+        }
+    }
+
+    private int keywordScore(String lowerContent, String sceneName) {
+        return switch (sceneName) {
+            case "客服场景" -> countHits(lowerContent, "订单", "退货", "退款", "投诉", "售后", "客服", "物流");
+            case "金融场景" -> countHits(lowerContent, "股票", "基金", "理财", "投资", "贷款", "保险", "银行卡", "转账", "银行");
+            case "医疗场景" -> countHits(lowerContent, "医生", "医院", "病情", "症状", "药品", "治疗", "病历", "健康", "患者");
+            case "研发场景" ->
+                countHits(lowerContent, "bug", "deploy", "api", "token", "代码", "调试", "接口", "部署", "api_key", "password");
+            case "招聘场景" -> countHits(lowerContent, "简历", "面试", "招聘", "薪资", "职位", "入职", "离职");
+            case "通用场景" -> 1; // 最低优先级兜底
+            default -> 0;
+        };
+    }
+
+    private int countHits(String content, String... keywords) {
+        int count = 0;
+        for (String kw : keywords) {
+            if (content.contains(kw))
+                count++;
+        }
+        return count;
     }
 
     private void cleanupExpiredFileTasks() {

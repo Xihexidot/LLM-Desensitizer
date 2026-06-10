@@ -23,7 +23,7 @@ async function loadDetail() {
     const res = await fetch(`${API_BASE_URL}/gateway/v1/audit/events/${props.eventId}`)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const body = await res.json()
-    event.value = body.data?.item || null
+    event.value = body || null
   } catch (e) {
     error.value = '加载失败: ' + e.message
   } finally {

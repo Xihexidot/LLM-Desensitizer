@@ -58,7 +58,7 @@
 
       if (eventsRes.ok) {
         const body = await eventsRes.json();
-        recentEvents.value = (body.data?.items || []).slice(0, 10);
+        recentEvents.value = (Array.isArray(body) ? body : []).slice(0, 10);
       }
     } catch (e) {
       error.value = "加载失败: " + e.message;

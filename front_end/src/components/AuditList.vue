@@ -33,7 +33,7 @@
       const res = await fetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const body = await res.json();
-      events.value = body.data?.items || [];
+      events.value = Array.isArray(body) ? body : [];
     } catch (e) {
       error.value = "加载失败: " + e.message;
     } finally {

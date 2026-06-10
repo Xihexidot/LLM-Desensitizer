@@ -7,6 +7,7 @@ import lombok.NoArgsConstructor;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * 表示发送到 LLM 服务的请求信息。
@@ -55,9 +56,16 @@ public class LlmRequest {
     private List<String> whitelist;
 
     /**
-     * 请求数据类型，例如 {@code TEXT}, {@code JSON}, {@code XML}, {@code IMAGE}, {@code AUDIO}, {@code PDF}, {@code DOC} 等。
+     * 请求数据类型，例如 {@code TEXT}, {@code JSON}, {@code XML}, {@code IMAGE},
+     * {@code AUDIO}, {@code PDF}, {@code DOC} 等。
      */
     private String dataType;
+
+    /**
+     * 指定需要检测的敏感类型集合（为空则检测全部）。
+     * 网关层情景感知后传入，用于动态调整检测范围。
+     */
+    private Set<String> includeTypes;
 
     /**
      * 如果未指定 provider，则返回默认提供商 {@link LlmProvider#DEEPSEEK}。
@@ -67,7 +75,7 @@ public class LlmRequest {
     public LlmProvider getProvider() {
         return provider != null ? provider : LlmProvider.DEEPSEEK;
     }
-    
+
     /**
      * 如果未指定数据类型，则默认返回 {@code TEXT}。
      *

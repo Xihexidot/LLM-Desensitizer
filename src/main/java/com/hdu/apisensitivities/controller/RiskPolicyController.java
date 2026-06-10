@@ -20,7 +20,8 @@ public class RiskPolicyController {
     public static class ScenePolicy {
         public int id;
         public String sceneName;
-        public List<String> types = new ArrayList<>();
+        public List<String> types = new ArrayList<>(); // 风险决策关注的敏感类型
+        public List<String> detectTypes = new ArrayList<>(); // 该场景需要检测的敏感类型(空=全部)
         public int threshold; // 0 = 任意命中
         public String riskLevel; // LOW/MEDIUM/HIGH
         public String action; // ALLOW/DESENSITIZE_AND_ALLOW/BLOCK/ROUTE_TO_INTERNAL_MODEL
@@ -49,24 +50,41 @@ public class RiskPolicyController {
 
     static {
         CONFIG.global = new GlobalPolicy();
-        CONFIG.scenes.add(createScene(1, "客服场景", List.of("PHONE_NUMBER", "ADDRESS", "ID_CARD"), 1, "MEDIUM",
-                "DESENSITIZE_AND_ALLOW"));
-        CONFIG.scenes.add(createScene(2, "金融场景", List.of("BANK_CARD", "ID_CARD", "PASSWORD"), 0, "HIGH", "BLOCK"));
-        CONFIG.scenes.add(createScene(3, "医疗场景", List.of("ID_CARD", "SOCIAL_SECURITY", "BIRTH_DATE"), 0, "HIGH",
-                "BLOCK"));
-        CONFIG.scenes.add(createScene(4, "研发场景", List.of("API_KEY", "PASSWORD"), 1, "HIGH", "BLOCK"));
-        CONFIG.scenes.add(createScene(5, "招聘场景", List.of("PHONE_NUMBER", "ID_CARD"), 2, "MEDIUM",
-                "DESENSITIZE_AND_ALLOW"));
-        CONFIG.scenes.add(createScene(6, "通用场景", List.of("PHONE_NUMBER", "EMAIL", "ADDRESS"), 3, "MEDIUM",
-                "DESENSITIZE_AND_ALLOW"));
+        CONFIG.scenes.add(createScene(1, "客服场景",
+                List.of("PHONE_NUMBER", "ADDRESS", "ID_CARD"),
+                List.of("PHONE_NUMBER", "ID_CARD", "EMAIL", "ADDRESS", "PERSON_NAME"),
+                1, "MEDIUM", "DESENSITIZE_AND_ALLOW"));
+        CONFIG.scenes.add(createScene(2, "金融场景",
+                List.of("BANK_CARD", "ID_CARD", "PASSWORD"),
+                List.of("BANK_CARD", "ID_CARD", "PASSWORD", "CREDIT_CARD", "SOCIAL_SECURITY"),
+                0, "HIGH", "BLOCK"));
+        CONFIG.scenes.add(createScene(3, "医疗场景",
+                List.of("ID_CARD", "SOCIAL_SECURITY", "BIRTH_DATE"),
+                List.of("ID_CARD", "SOCIAL_SECURITY", "BIRTH_DATE", "PERSON_NAME"),
+                0, "HIGH", "BLOCK"));
+        CONFIG.scenes.add(createScene(4, "研发场景",
+                List.of("API_KEY", "PASSWORD"),
+                List.of("API_KEY", "PASSWORD"),
+                1, "HIGH", "BLOCK"));
+        CONFIG.scenes.add(createScene(5, "招聘场景",
+                List.of("PHONE_NUMBER", "ID_CARD"),
+                List.of("PHONE_NUMBER", "ID_CARD", "EMAIL", "PERSON_NAME"),
+                2, "MEDIUM", "DESENSITIZE_AND_ALLOW"));
+        CONFIG.scenes.add(createScene(6, "通用场景",
+                List.of("PHONE_NUMBER", "EMAIL", "ADDRESS"),
+                List.of("PHONE_NUMBER", "ID_CARD", "BANK_CARD", "EMAIL", "ADDRESS", "PASSWORD", "API_KEY"),
+                3, "MEDIUM", "DESENSITIZE_AND_ALLOW"));
     }
 
-    private static ScenePolicy createScene(int id, String name, List<String> types, int threshold, String riskLevel,
-            String action) {
+    private static ScenePolicy createScene(int id, String name, List<String> types, List<String> detectTypes,
+            int threshold, String riskLevel, String action) {
         ScenePolicy p = new ScenePolicy();
         p.id = id;
         p.sceneName = name;
         p.types.addAll(types);
+        if (detectTypes != null) {
+            p.detectTypes.addAll(detectTypes);
+        }
         p.threshold = threshold;
         p.riskLevel = riskLevel;
         p.action = action;
