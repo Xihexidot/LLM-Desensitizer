@@ -1,11 +1,14 @@
 package com.hdu.apisensitivities.controller;
 
 import com.hdu.apisensitivities.entity.*;
+import com.hdu.apisensitivities.service.DocumentParserService;
 import com.hdu.apisensitivities.service.LlmConfigService;
 import com.hdu.apisensitivities.service.LlmProxyService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 import java.util.Map;
@@ -17,12 +20,49 @@ public class LlmProxyController {
 
     private final LlmProxyService llmProxyService;
     private final LlmConfigService configService;
+    private final DocumentParserService documentParserService;
 
     @Autowired
-    public LlmProxyController(LlmProxyService llmProxyService, LlmConfigService configService) {
+    public LlmProxyController(LlmProxyService llmProxyService,
+                              LlmConfigService configService,
+                              DocumentParserService documentParserService) {
         this.llmProxyService = llmProxyService;
         this.configService = configService;
+        this.documentParserService = documentParserService;
     }
+
+    // ==================== ✨ 【核心位置】：接收文件的网关端点】 ====================
+    /**
+     * 接收前端上传的 Word、PDF、TXT 文件
+     * 提取文本并送入 RAG 过滤与数据脱敏流水线
+     */
+    @PostMapping(value = "/proxy/file", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<LlmResponse> processDesensitizationFile(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(defaultValue = "DEEPSEEK") String provider,
+            @RequestParam(required = false) String model) {
+
+        try {
+            // 1. 压榨文件流，提取纯文本
+            String extractedText = documentParserService.extractTextFromFile(file);
+
+            // 2. 转换为标准 LlmRequest（无缝享用系统的 RAG 合规阻断与打码逻辑）
+            LlmRequest request = LlmRequest.builder()
+                    .provider(LlmProvider.valueOf(provider.toUpperCase()))
+                    .model(model)
+                    .dataType("TEXT")
+                    .prompt(extractedText)
+                    .build();
+
+            // 3. 递交给核心多代理脱敏中枢
+            LlmResponse response = llmProxyService.processLlmRequest(request);
+            return ResponseEntity.ok(response);
+
+        } catch (Exception e) {
+            throw new RuntimeException("文件审计或脱敏全链路异常: " + e.getMessage(), e);
+        }
+    }
+    // =========================================================================
 
 
     //新版LLM请求（多供应商）- 支持多种数据类型
@@ -35,12 +75,12 @@ public class LlmProxyController {
         LlmResponse response = llmProxyService.processLlmRequest(request);
         return ResponseEntity.ok(response);
     }
-    
+
     //处理结构化数据的LLM请求，直接接收结构化数据，自动转换为合适的格式发送给LLM服务
     @PostMapping("/proxy/structured")
-    public ResponseEntity<LlmResponse> processStructuredLlmRequest(@RequestBody Map<String, Object> structuredData, 
-                                                                 @RequestParam(defaultValue = "DEEPSEEK") String provider,
-                                                                 @RequestParam(required = false) String model) {
+    public ResponseEntity<LlmResponse> processStructuredLlmRequest(@RequestBody Map<String, Object> structuredData,
+                                                                   @RequestParam(defaultValue = "DEEPSEEK") String provider,
+                                                                   @RequestParam(required = false) String model) {
         // 构建LLM请求
         LlmRequest request = LlmRequest.builder()
                 .provider(LlmProvider.valueOf(provider.toUpperCase()))
@@ -48,7 +88,7 @@ public class LlmProxyController {
                 .dataType("JSON") // 指定为JSON数据类型
                 .parameters(Map.of("structured_data", structuredData))
                 .build();
-                
+
         LlmResponse response = llmProxyService.processLlmRequest(request);
         return ResponseEntity.ok(response);
     }
@@ -87,7 +127,7 @@ public class LlmProxyController {
         Map<String, LlmResponse> responses = llmProxyService.batchProcessLlmRequests(requests);
         return ResponseEntity.ok(responses);
     }
-    
+
     //异步处理结构化数据的LLM请求
     @PostMapping("/proxy/async/structured")
     public CompletableFuture<ResponseEntity<LlmResponse>> processStructuredLlmRequestAsync(
@@ -101,7 +141,7 @@ public class LlmProxyController {
                 .dataType("JSON")
                 .parameters(Map.of("structured_data", structuredData))
                 .build();
-                
+
         return llmProxyService.processLlmRequestAsync(request)
                 .thenApply(ResponseEntity::ok);
     }
