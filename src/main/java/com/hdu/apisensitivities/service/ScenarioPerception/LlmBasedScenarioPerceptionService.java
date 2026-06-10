@@ -10,7 +10,6 @@ import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.service.LlmClient.LlmClient;
 import com.hdu.apisensitivities.service.LlmConfigService;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -33,7 +32,6 @@ public class LlmBasedScenarioPerceptionService implements ScenarioPerceptionServ
     @Value("${scenario.llm.provider:DEEPSEEK}")
     private String defaultProviderName;
 
-    @Autowired
     public LlmBasedScenarioPerceptionService(List<LlmClient> clients, LlmConfigService llmConfigService) {
         this.llmClients = clients.stream()
                 .collect(Collectors.toMap(

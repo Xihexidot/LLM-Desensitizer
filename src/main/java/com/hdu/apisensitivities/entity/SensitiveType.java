@@ -1,10 +1,10 @@
 package com.hdu.apisensitivities.entity;
 
 public enum SensitiveType {
-    PHONE_NUMBER,
-    EMAIL,
-    ID_CARD,
-    BANK_CARD,
+    PHONE_NUMBER,   // 手机号
+    EMAIL,          // 邮箱
+    ID_CARD,    
+    BANK_CARD,      
     API_KEY,
     CUSTOM,
     CREDIT_CARD,

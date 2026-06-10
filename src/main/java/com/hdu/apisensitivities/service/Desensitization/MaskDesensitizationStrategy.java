@@ -2,7 +2,10 @@ package com.hdu.apisensitivities.service.Desensitization;
 
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
+
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -12,6 +15,10 @@ import java.util.stream.Collectors;
 @Component
 public class MaskDesensitizationStrategy implements DesensitizationStrategy {
 
+    // 1. 在你的类头部注入全局一致性仓库
+    @Autowired
+    private GlobalSessionContextRepository contextRepository;
+
     private final Map<SensitiveType, String> MASK_TEMPLATES = new HashMap<>();
 
     public MaskDesensitizationStrategy() {
@@ -20,13 +27,17 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
         MASK_TEMPLATES.put(SensitiveType.EMAIL, "[EMAIL]");
         MASK_TEMPLATES.put(SensitiveType.ID_CARD, "[ID_CARD]");
         MASK_TEMPLATES.put(SensitiveType.NAME, "[NAME]");
+        MASK_TEMPLATES.put(SensitiveType.PERSON, "[PERSON]");
         MASK_TEMPLATES.put(SensitiveType.ADDRESS, "[ADDRESS]");
+        MASK_TEMPLATES.put(SensitiveType.ORGANIZATION, "[ORG]");
         MASK_TEMPLATES.put(SensitiveType.CREDIT_CARD, "[CREDIT_CARD]");
         MASK_TEMPLATES.put(SensitiveType.PASSWORD, "[PASSWORD]");
+        MASK_TEMPLATES.put(SensitiveType.API_KEY, "[API_KEY]");
+        MASK_TEMPLATES.put(SensitiveType.PASSPORT, "[PASSPORT]");
         MASK_TEMPLATES.put(SensitiveType.BIRTH_DATE, "[BIRTH_DATE]");
         MASK_TEMPLATES.put(SensitiveType.CUSTOM, "[CUSTOM]");
         MASK_TEMPLATES.put(SensitiveType.IP_ADDRESS, "[IP]");
-        MASK_TEMPLATES.put(SensitiveType.LICENSE_PLATE, "[LICENSE_PLATE]");
+        MASK_TEMPLATES.put(SensitiveType.LICENSE_PLATE, "[PLATE]");
     }
 
     @Override
@@ -45,25 +56,48 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
         if (validEntities.isEmpty()) {
             return text;
         }
+        // 【新增】获取当前线程绑定的会话 ID
+        String sessionId = DesensitizeRequestContext.getSessionId();
 
         String result = text;
         for (SensitiveEntity entity : validEntities) {
             try {
-                String mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
-                // 确保索引不越界
+                String typeStr = entity.getType().name();
+                String originalText = entity.getOriginalText();
+
                 int start = Math.max(0, entity.getStart());
                 int end = Math.min(text.length(), entity.getEnd());
+
+                if (start > end || end > result.length()) {
+                    log.warn("脱敏位置越界，跳过实体: type={} start={} end={} resultLen={}", typeStr, start, end, result.length());
+                    continue;
+                }
+                String actualAtPosition = result.substring(start, end);
+                if (!actualAtPosition.equals(originalText)) {
+                    log.warn("脱敏位置内容不匹配，跳过实体: type={} start={} end={} original='{}' actual='{}'", typeStr, start, end,
+                            originalText, actualAtPosition);
+                    continue;
+                }
+
+                // 一致性占位符生成
+                String mask = contextRepository.getOrCreateConsistencyValue(sessionId, originalText, typeStr,
+                        currentId -> {
+                            // 如果是新出现的，通过自增出来的 currentId 动态拼接
+                            String template = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
+                            // 如果原本是 "[NAME]"，现在一致性升级为 "[NAME_1]"
+                            if (template.endsWith("]")) {
+                                return template.substring(0, template.length() - 1) + "_" + currentId + "]";
+                            }
+                            return template + "_" + currentId;
+                        });
+
                 if (start <= end) {
-                    result = result.substring(0, start) +
-                            mask +
-                            result.substring(end);
+                    result = result.substring(0, start) + mask + result.substring(end);
                 }
             } catch (StringIndexOutOfBoundsException e) {
                 log.warn("脱敏过程中出现索引越界，实体: {}, 文本长度: {}", entity, text.length());
-                // 忽略这个实体，继续处理下一个
             }
         }
-
         return result;
     }
 
@@ -134,7 +168,8 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
         return new HashSet<>(Arrays.asList(SensitiveType.PHONE_NUMBER, SensitiveType.BANK_CARD, SensitiveType.EMAIL,
                 SensitiveType.ID_CARD, SensitiveType.ADDRESS, SensitiveType.NAME, SensitiveType.BIRTH_DATE,
                 SensitiveType.PASSWORD, SensitiveType.CREDIT_CARD, SensitiveType.PASSPORT, SensitiveType.IP_ADDRESS,
-                SensitiveType.LICENSE_PLATE));
+                SensitiveType.LICENSE_PLATE, SensitiveType.PERSON, SensitiveType.ORGANIZATION,
+                SensitiveType.API_KEY, SensitiveType.CUSTOM, SensitiveType.SOCIAL_SECURITY));
     }
 
     // 按字段路径对Map中的字段进行掩码处理
@@ -166,12 +201,16 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                     if (index == pathParts.length - 1 && listElement instanceof String) {
                         // 最后一部分且是字符串，进行脱敏
                         String strValue = (String) listElement;
-                        ((List<Object>) value).set(arrayIndex,
-                                strValue.replace(sensitiveEntity.getOriginalText(), mask));
+                        List<Object> listValue = CollectionTypeUtils.asObjectList(value);
+                        if (listValue != null) {
+                            listValue.set(arrayIndex, strValue.replace(sensitiveEntity.getOriginalText(), mask));
+                        }
                     } else if (listElement instanceof Map) {
                         // 嵌套对象，继续递归
-                        processFieldPath((Map<String, Object>) listElement, pathParts, index + 1, sensitiveEntity,
-                                mask);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(listElement);
+                        if (nestedMap != null) {
+                            processFieldPath(nestedMap, pathParts, index + 1, sensitiveEntity, mask);
+                        }
                     }
                 }
             }
@@ -183,12 +222,18 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 map.put(part, strValue.replace(sensitiveEntity.getOriginalText(), mask));
             } else if (value instanceof Map) {
                 // 嵌套对象，继续递归
-                processFieldPath((Map<String, Object>) value, pathParts, index + 1, sensitiveEntity, mask);
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                if (nestedMap != null) {
+                    processFieldPath(nestedMap, pathParts, index + 1, sensitiveEntity, mask);
+                }
             } else if (value instanceof List) {
                 // 列表，需要递归处理每个元素
                 for (Object element : (List<?>) value) {
                     if (element instanceof Map) {
-                        processFieldPath((Map<String, Object>) element, pathParts, index + 1, sensitiveEntity, mask);
+                        Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(element);
+                        if (nestedMap != null) {
+                            processFieldPath(nestedMap, pathParts, index + 1, sensitiveEntity, mask);
+                        }
                     }
                 }
             }
@@ -225,7 +270,8 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 }
             } else if (value instanceof Map) {
                 // 递归处理嵌套Map
-                result.put(key, deepMaskMap((Map<String, Object>) value, entity, mask));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(value);
+                result.put(key, nestedMap == null ? value : deepMaskMap(nestedMap, entity, mask));
             } else if (value instanceof List) {
                 // 处理List
                 result.put(key, deepMaskList((List<?>) value, entity, mask));
@@ -252,7 +298,8 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                 result.add(strItem);
             } else if (item instanceof Map) {
                 // 递归处理嵌套Map
-                result.add(deepMaskMap((Map<String, Object>) item, entity, mask));
+                Map<String, Object> nestedMap = CollectionTypeUtils.asStringObjectMap(item);
+                result.add(nestedMap == null ? item : deepMaskMap(nestedMap, entity, mask));
             } else if (item instanceof List) {
                 // 递归处理嵌套List
                 result.add(deepMaskList((List<?>) item, entity, mask));
@@ -265,43 +312,4 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
         return result;
     }
 
-    // 处理多个实体的深度遍历方法
-    private List<Object> deepMaskList(List<?> list, List<SensitiveEntity> entities) {
-        List<Object> result = new ArrayList<>();
-
-        for (Object item : list) {
-            if (item instanceof String) {
-                String strItem = (String) item;
-                // 对每个字符串项应用所有实体的掩码
-                for (SensitiveEntity entity : entities) {
-                    String mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
-                    if (strItem.contains(entity.getOriginalText())) {
-                        strItem = strItem.replace(entity.getOriginalText(), mask);
-                    }
-                }
-                result.add(strItem);
-            } else if (item instanceof Map) {
-                // 递归处理嵌套Map
-                Map<String, Object> maskedMap = new HashMap<>((Map<String, Object>) item);
-                for (SensitiveEntity entity : entities) {
-                    String mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
-                    maskedMap = deepMaskMap(maskedMap, entity, mask);
-                }
-                result.add(maskedMap);
-            } else if (item instanceof List) {
-                // 递归处理嵌套List
-                result.add(deepMaskList((List<?>) item, entities));
-            } else {
-                // 其他类型直接保留
-                result.add(item);
-            }
-        }
-
-        return result;
-    }
-
-    // 日志记录方法
-    private void log(String message, Object... args) {
-        log.info("[MaskDesensitizationStrategy] " + message, args);
-    }
 }

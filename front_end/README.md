@@ -13,32 +13,50 @@
 
 ## 技术栈
 
-- **前端框架**：Vue 3
+- **前端框架**：Vue 3 (Composition API)
 - **构建工具**：Vite
-- **样式处理**：CSS/SCSS
-- **HTTP客户端**：Axios
-- **UI组件库**：待补充（根据实际使用的组件库）
+- **样式处理**：原生 CSS
+- **HTTP 客户端**：fetch API（无额外依赖）
+- **图表**：Chart.js + vue-chartjs
+- **Markdown 渲染**：markdown-it
+- **代码高亮**：highlight.js
+- **PDF 导出**：jsPDF + html2canvas
 
 ## 项目结构
 
 ```
 front_end/
-├── public/           # 静态资源文件
+├── public/                       # 静态资源与样本数据
+│   ├── sample_sensitive_30k.txt  # 30k 敏感数据样本
+│   └── vite.svg
 ├── src/
-│   ├── assets/       # 项目资源（图片、字体等）
-│   ├── components/   # Vue组件
-│   ├── views/        # 页面视图
-│   ├── services/     # API服务
-│   ├── utils/        # 工具函数
-│   ├── router/       # 路由配置
-│   ├── store/        # 状态管理
-│   ├── App.vue       # 应用主组件
-│   └── main.js       # 应用入口文件
-├── index.html        # HTML入口
-├── vite.config.js    # Vite配置
-├── package.json      # 项目依赖
-└── README.md         # 项目说明文档
+│   ├── assets/                   # 静态资源
+│   │   └── vue.svg
+│   ├── components/               # Vue 组件
+│   │   ├── LlmDesensitization.vue      # 核心脱敏交互页
+│   │   ├── LlmDetectionResults.vue     # 检测结果可视化
+│   │   ├── LlmFeatureCards.vue         # 特性卡片展示
+│   │   ├── LlmProcessingProgress.vue   # 处理进度动画
+│   │   ├── LlmResultsPanel.vue         # 结果面板
+│   │   ├── SensitiveRules.vue          # 自定义规则管理
+│   │   ├── Sidebar.vue                  # 侧边导航
+│   │   ├── ConversationHistory.vue     # 会话历史
+│   │   ├── DashboardStats.vue          # 仪表盘统计
+│   │   └── HelloWorld.vue              # 入门组件
+│   ├── utils/                    # 工具函数
+│   │   └── llmReportExport.js    # 报告导出工具
+│   ├── App.vue                   # 应用主入口
+│   ├── config.js                 # 前端配置文件
+│   ├── main.js                   # 应用挂载入口
+│   └── style.css                 # 全局样式
+├── index.html                    # HTML 入口
+├── vite.config.js                # Vite 构建配置
+├── package.json                  # 项目依赖
+├── package-lock.json
+└── README.md
 ```
+
+> 说明：当前前端未使用 Vue Router、Pinia/Vuex 状态管理，路由与状态均由 App.vue 通过响应式变量集中管理。
 
 ## 快速开始
 
@@ -71,35 +89,34 @@ npm run build
 
 构建后的文件将输出到 `dist` 目录。
 
-## API集成
+## API 集成
 
-前端应用与后端服务通过RESTful API进行交互，主要接口包括：
+前端应用与后端服务通过 RESTful API 交互，主要接口包括：
 
-- 敏感信息检测接口
-- 脱敏处理接口
-- 脱敏规则配置接口
-- 历史记录查询接口
+- 敏感信息检测与脱敏：`/desensitize/*`
+- LLM 代理调用：`/api/llm/proxy`
+- 自定义规则管理：`/rules`
+- 敏感词典管理：`/dict`
 
-后端服务默认运行在 http://localhost:8081。如需修改API基础URL，请在项目配置中更新。
+后端服务默认运行在 `http://localhost:8080`。API 基础 URL 在 `src/config.js` 中配置。
 
 ## 开发指南
 
 ### 组件开发
 
 1. 在 `src/components` 目录下创建新组件
-2. 使用Vue 3的组合式API (`<script setup>`)进行开发
+2. 使用 Vue 3 组合式 API (`<script setup>`) 进行开发
 3. 遵循组件命名规范（PascalCase）
 
-### API调用
+### API 调用
 
-1. 在 `src/services` 目录下创建API服务文件
-2. 使用Axios进行HTTP请求
-3. 统一处理错误和响应格式
+- 组件内直接使用 `fetch` 发起 HTTP 请求
+- 请求由组件生命周期或事件处理函数触发
+- 无独立的 services 抽象层
 
 ## 代码规范
 
-- 遵循Vue 3官方推荐的最佳实践
-- 使用ESLint和Prettier保持代码风格一致
+- 遵循 Vue 3 官方推荐的最佳实践
 - 为组件和关键函数添加适当的文档注释
 
 ## 贡献指南

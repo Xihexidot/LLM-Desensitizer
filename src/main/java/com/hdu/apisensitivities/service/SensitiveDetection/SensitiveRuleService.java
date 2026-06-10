@@ -4,7 +4,6 @@ import com.hdu.apisensitivities.dto.SensitiveRule;
 
 import com.hdu.apisensitivities.mapper.SensitiveRuleMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,19 +15,18 @@ import java.util.regex.PatternSyntaxException;
 @Slf4j
 @Service
 public class SensitiveRuleService {
-
     private final SensitiveRuleMapper sensitiveRuleMapper;
-    private final SensitiveDetectionService sensitiveDetectionService;
+    private final CustomPatternDetectionService customPatternDetectionService;
 
-    @Autowired
     public SensitiveRuleService(SensitiveRuleMapper sensitiveRuleMapper,
-                                SensitiveDetectionService sensitiveDetectionService) {
+                                CustomPatternDetectionService customPatternDetectionService) {
         this.sensitiveRuleMapper = sensitiveRuleMapper;
-        this.sensitiveDetectionService = sensitiveDetectionService;
+        this.customPatternDetectionService = customPatternDetectionService;
     }
 
     /**
-     * 初始化时加载所有启用的规则
+     * 初始化时加载所有启用的 CUSTOM 规则。
+     * BUILTIN 规则由 DictConfigService 统一加载覆盖。
      */
     @PostConstruct
     public void init() {
@@ -36,8 +34,11 @@ public class SensitiveRuleService {
         List<SensitiveRule> rules = sensitiveRuleMapper.selectEnabled();
         int count = 0;
         for (SensitiveRule rule : rules) {
+            if ("BUILTIN".equals(rule.getRuleType())) {
+                continue; // BUILTIN 规则由 DictConfigService 处理
+            }
             try {
-                sensitiveDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
+                customPatternDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
                 count++;
             } catch (Exception e) {
                 log.error("加载规则 {} 失败: {}", rule.getPatternName(), e.getMessage());
@@ -71,7 +72,7 @@ public class SensitiveRuleService {
         sensitiveRuleMapper.insert(rule);
 
         if (rule.getIsEnabled()) {
-            sensitiveDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
+            customPatternDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
         }
     }
 
@@ -96,16 +97,16 @@ public class SensitiveRuleService {
         // 刷新内存中的规则
         SensitiveRule updated = sensitiveRuleMapper.selectByPatternName(rule.getPatternName());
         if (updated.getIsEnabled()) {
-            sensitiveDetectionService.addCustomPattern(updated.getPatternName(), updated.getRegex());
+            customPatternDetectionService.addCustomPattern(updated.getPatternName(), updated.getRegex());
         } else {
-            sensitiveDetectionService.removeCustomPattern(updated.getPatternName());
+            customPatternDetectionService.removeCustomPattern(updated.getPatternName());
         }
     }
 
     @Transactional
     public void deleteRule(String patternName) {
         sensitiveRuleMapper.deleteByPatternName(patternName);
-        sensitiveDetectionService.removeCustomPattern(patternName);
+        customPatternDetectionService.removeCustomPattern(patternName);
     }
 
     @Transactional
@@ -118,9 +119,9 @@ public class SensitiveRuleService {
         sensitiveRuleMapper.updateStatus(patternName, enabled);
 
         if (enabled) {
-            sensitiveDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
+            customPatternDetectionService.addCustomPattern(rule.getPatternName(), rule.getRegex());
         } else {
-            sensitiveDetectionService.removeCustomPattern(patternName);
+            customPatternDetectionService.removeCustomPattern(patternName);
         }
     }
 }

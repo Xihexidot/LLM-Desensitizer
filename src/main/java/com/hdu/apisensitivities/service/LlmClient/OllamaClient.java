@@ -3,12 +3,10 @@ package com.hdu.apisensitivities.service.LlmClient;
 import com.hdu.apisensitivities.config.LlmConfig;
 import com.hdu.apisensitivities.entity.LlmProvider;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.http.HttpHeaders; // 必须导入
-import org.springframework.http.MediaType;   // 必须导入
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.HttpHeaders;
-import java.util.Map;
 
 @Slf4j
 @Component

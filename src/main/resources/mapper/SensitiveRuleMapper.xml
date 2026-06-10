@@ -8,17 +8,18 @@
         <result column="regex" property="regex" jdbcType="VARCHAR"/>
         <result column="is_enabled" property="isEnabled" jdbcType="BOOLEAN"/>
         <result column="description" property="description" jdbcType="VARCHAR"/>
+        <result column="rule_type" property="ruleType" jdbcType="VARCHAR"/>
         <result column="created_at" property="createdAt" jdbcType="TIMESTAMP"/>
         <result column="updated_at" property="updatedAt" jdbcType="TIMESTAMP"/>
     </resultMap>
 
     <sql id="Base_Column_List">
-        id, pattern_name, regex, is_enabled, description, created_at, updated_at
+        id, pattern_name, regex, is_enabled, description, rule_type, created_at, updated_at
     </sql>
 
     <insert id="insert" parameterType="com.hdu.apisensitivities.dto.SensitiveRule" useGeneratedKeys="true" keyProperty="id">
-        INSERT INTO sensitive_rules (pattern_name, regex, is_enabled, description)
-        VALUES (#{patternName}, #{regex}, #{isEnabled}, #{description})
+        INSERT INTO sensitive_rules (pattern_name, regex, is_enabled, description, rule_type)
+        VALUES (#{patternName}, #{regex}, #{isEnabled}, #{description}, #{ruleType})
     </insert>
 
     <update id="update" parameterType="com.hdu.apisensitivities.dto.SensitiveRule">

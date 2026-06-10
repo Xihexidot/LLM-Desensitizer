@@ -2,18 +2,20 @@ package com.hdu.apisensitivities.service.LlmClient;
 
 import com.hdu.apisensitivities.config.LlmConfig;
 import com.hdu.apisensitivities.entity.LlmProvider;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.HttpHeaders;
 
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Slf4j
@@ -38,8 +40,11 @@ public class KimiClient implements LlmClient {
             HttpEntity<Map<String, Object>> entity = new HttpEntity<>(requestBody, headers);
 
             log.info("正在发送Kimi API请求...");
-            ResponseEntity<Map> response = restTemplate.exchange(
-                    config.getApiUrl(), HttpMethod.POST, entity, Map.class);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    Objects.requireNonNull(config.getApiUrl(), "Kimi API URL不能为空"),
+                    Objects.requireNonNull(HttpMethod.POST),
+                    entity,
+                    new ParameterizedTypeReference<>() {});
             
             log.info("Kimi API响应状态码: {}", response.getStatusCode());
             log.debug("Kimi API响应体: {}", response.getBody());
@@ -118,6 +123,7 @@ public class KimiClient implements LlmClient {
 
     private Map<String, Object> createRequestBody(String prompt, LlmConfig config, Map<String, Object> parameters) {
         Map<String, Object> requestBody = new HashMap<>();
+        Map<String, Object> effectiveParameters = parameters == null ? Map.of() : parameters;
         requestBody.put("model", config.getModel());
         
         // 构建messages数组
@@ -129,17 +135,15 @@ public class KimiClient implements LlmClient {
         requestBody.put("messages", messages);
         
         // 添加参数
-        requestBody.put("temperature", parameters.getOrDefault("temperature", config.getTemperature()));
-        requestBody.put("max_tokens", parameters.getOrDefault("maxTokens", config.getMaxTokens()));
+        requestBody.put("temperature", effectiveParameters.getOrDefault("temperature", config.getTemperature()));
+        requestBody.put("max_tokens", effectiveParameters.getOrDefault("maxTokens", config.getMaxTokens()));
         
         // 添加其他参数
-        if (parameters != null) {
-            parameters.forEach((key, value) -> {
-                if (!"temperature".equals(key) && !"maxTokens".equals(key)) {
-                    requestBody.put(key, value);
-                }
-            });
-        }
+        effectiveParameters.forEach((key, value) -> {
+            if (!"temperature".equals(key) && !"maxTokens".equals(key)) {
+                requestBody.put(key, value);
+            }
+        });
         
         return requestBody;
     }
@@ -149,17 +153,20 @@ public class KimiClient implements LlmClient {
             throw new RuntimeException("Kimi API返回空响应");
         }
         
-        List<Map<String, Object>> choices = (List<Map<String, Object>>) responseBody.get("choices");
+        List<Map<String, Object>> choices = CollectionTypeUtils.asStringObjectMapList(responseBody.get("choices"));
         if (choices == null || choices.isEmpty()) {
             throw new RuntimeException("Kimi API响应中没有choices字段");
         }
         
         Map<String, Object> choice = choices.get(0);
-        Map<String, Object> message = (Map<String, Object>) choice.get("message");
+        Map<String, Object> message = CollectionTypeUtils.asStringObjectMap(choice.get("message"));
         if (message == null) {
             throw new RuntimeException("Kimi API响应中没有message字段");
         }
         
-        return (String) message.get("content");
+        if (message.get("content") instanceof String content) {
+            return content;
+        }
+        throw new RuntimeException("Kimi API响应中没有content字段");
     }
 }

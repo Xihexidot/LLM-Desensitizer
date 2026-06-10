@@ -1,0 +1,50 @@
+{
+  "manifest_version": 3,
+  "name": "AI 输入安全助手",
+  "version": "1.0",
+  "description": "在用户发送到 AI 网站前检查输入内容，并提示脱敏或拦截",
+  "permissions": [
+    "storage"
+  ],
+  "action": {
+    "default_title": "AI 输入安全助手",
+    "default_popup": "config.html"
+  },
+  "host_permissions": [
+    "https://chat.deepseek.com/*",
+    "https://chatgpt.com/*",
+    "https://*.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://kimi.moonshot.cn/*",
+    "https://www.doubao.com/*",
+    "https://yuanbao.tencent.com/*",
+    "https://claude.ai/*",
+    "https://www.perplexity.ai/*",
+    "http://127.0.0.1:*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://chat.deepseek.com/*",
+        "https://chatgpt.com/*",
+        "https://*.openai.com/*",
+        "https://gemini.google.com/*",
+        "https://kimi.moonshot.cn/*",
+        "https://www.doubao.com/*",
+        "https://yuanbao.tencent.com/*",
+        "https://claude.ai/*",
+        "https://www.perplexity.ai/*"
+      ],
+      "js": [
+        "popup.js",
+        "content.js"
+      ],
+      "css": ["popup.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

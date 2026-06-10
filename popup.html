@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>脱敏安全助手</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <div class="header">
+      <span class="icon">🛡️</span>
+      <span class="title">脱敏安全助手</span>
+      <span class="badge">运行中</span>
+    </div>
+    
+    <div class="content">
+      <div class="status">
+        <div class="status-dot"></div>
+        <span>Agent 正在保护您的隐私</span>
+      </div>
+      
+      <div class="stats">
+        <div class="stat-item">
+          <div class="stat-value" id="totalDetections">0</div>
+          <div class="stat-label">总检测</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value" id="todayWarnings">0</div>
+          <div class="stat-label">今日警告</div>
+        </div>
+      </div>
+      
+      <div class="info">
+        <div class="info-title">📋 当前规则</div>
+        <div class="rule-list">
+          <span class="rule-tag">📱 手机号 → [PHONE]</span>
+          <span class="rule-tag">📧 邮箱 → [EMAIL]</span>
+          <span class="rule-tag">🆔 身份证 → [ID_CARD]</span>
+        </div>
+      </div>
+      
+      <div class="danger-list">
+        <div class="danger-title">⚠️ 危险词监控</div>
+        <div class="danger-tags">
+          <span>炸药</span> <span>炸弹</span> <span>毒品</span> <span>枪支</span> <span>暴力</span>
+        </div>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <span>🛡️ 正在保护您</span>
+      <button id="openPanel" class="open-btn">打开控制面板</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

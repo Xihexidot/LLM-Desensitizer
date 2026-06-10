@@ -2,16 +2,18 @@ package com.hdu.apisensitivities.service.LlmClient;
 
 import com.hdu.apisensitivities.config.LlmConfig;
 import com.hdu.apisensitivities.entity.LlmProvider;
+import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import lombok.extern.slf4j.Slf4j;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.*;
 import org.springframework.stereotype.Component;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.web.client.RestTemplate;
-import org.springframework.http.HttpHeaders;
 
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Slf4j
@@ -49,8 +51,11 @@ public class DeepSeekClient implements LlmClient {
 
             log.info("正在发送DeepSeek API请求...");
             System.out.println("正在发送请求...");
-            ResponseEntity<Map> response = restTemplate.exchange(
-                    config.getApiUrl(), HttpMethod.POST, entity, Map.class);
+            ResponseEntity<Map<String, Object>> response = restTemplate.exchange(
+                    Objects.requireNonNull(config.getApiUrl(), "DeepSeek API URL不能为空"),
+                    Objects.requireNonNull(HttpMethod.POST),
+                    entity,
+                    new ParameterizedTypeReference<>() {});
             
             log.info("DeepSeek API响应状态码: {}", response.getStatusCode());
             log.debug("DeepSeek API响应体: {}", response.getBody());
@@ -164,16 +169,21 @@ public class DeepSeekClient implements LlmClient {
         }
 
         if (responseBody.containsKey("error")) {
-            Map<String, Object> error = (Map<String, Object>) responseBody.get("error");
+            Map<String, Object> error = CollectionTypeUtils.asStringObjectMap(responseBody.get("error"));
+            if (error == null) {
+                throw new RuntimeException("DeepSeek API错误: 无法解析错误详情");
+            }
             throw new RuntimeException("DeepSeek API错误: " + error.get("message"));
         }
 
         if (responseBody.containsKey("choices")) {
-            java.util.List<Map<String, Object>> choices = (java.util.List<Map<String, Object>>) responseBody.get("choices");
-            if (!choices.isEmpty()) {
+            java.util.List<Map<String, Object>> choices = CollectionTypeUtils.asStringObjectMapList(responseBody.get("choices"));
+            if (choices != null && !choices.isEmpty()) {
                 Map<String, Object> choice = choices.get(0);
-                Map<String, Object> message = (Map<String, Object>) choice.get("message");
-                return (String) message.get("content");
+                Map<String, Object> message = CollectionTypeUtils.asStringObjectMap(choice.get("message"));
+                if (message != null && message.get("content") instanceof String content) {
+                    return content;
+                }
             }
         }
 

@@ -15,6 +15,7 @@
     <description>ApiSensitivities</description>
     <properties>
         <java.version>21</java.version>
+        <start-class>com.hdu.apisensitivities.ApiSensitivitiesApplication</start-class>
     </properties>
     <dependencies>
         <dependency>
@@ -40,9 +41,13 @@
         </dependency>
 
         <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <version>1.18.40</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
