@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "脱敏安全助手",
+  "version": "1.0",
+  "description": "在AI网站上自动脱敏手机号、邮箱、身份证等敏感信息",
+  "content_scripts": [
+    {
+      "matches": ["https://*/*", "http://*/*"],
+      "js": ["content.js"]
+    }
+  ]
+}
