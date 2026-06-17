@@ -20,8 +20,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       );
     return true;
   }
+  if (message?.type === "check-gateway-status") {
+    (async () => {
+      const configured = await hasConfiguredGateway();
+      sendResponse({ configured });
+    })();
+    return true;
+  }
+  if (message?.type === "open-config") {
+    chrome.action.openPopup().catch(() => {
+      chrome.tabs.create({ url: chrome.runtime.getURL("config.html") });
+    });
+    sendResponse({ ok: true });
+    return false;
+  }
   return false;
 });
+
+/**
+ * 是否已显式配置网关地址（用户填了，不是默认值）。
+ * content.js 据此判断走纯前端脱敏还是后端深度检测。
+ */
+async function hasConfiguredGateway() {
+  try {
+    const result = await chrome.storage.local.get(STORAGE_KEY_GATEWAY);
+    const raw = result[STORAGE_KEY_GATEWAY];
+    return raw && raw.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
 
 async function getBaseUrl() {
   const result = await chrome.storage.local.get(STORAGE_KEY_GATEWAY);

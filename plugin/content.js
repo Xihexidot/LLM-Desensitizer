@@ -1,455 +1,400 @@
-const SEND_KEYWORDS = ["send", "发送", "submit", "提交", "ask", "message"];
-const bypassElements = new WeakMap();
+(function () {
+  "use strict";
 
-document.addEventListener("click", handleClick, true);
-document.addEventListener("keydown", handleKeydown, true);
+  const bypassElements = new WeakMap();
+  let gatewayConfiguredCache = null;
 
-function detectCurrentProvider() {
-  try {
-    const host = window.location.hostname || "";
-    if (host.includes("deepseek")) return "DeepSeek";
-    if (host.includes("chatgpt") || host.includes("openai")) return "ChatGPT";
-    if (host.includes("kimi") || host.includes("moonshot")) return "Kimi";
-    if (host.includes("tongyi") || host.includes("qwen")) return "通义千问";
-    if (host.includes("doubao") || host.includes("volces")) return "豆包";
-    if (host.includes("claude") || host.includes("anthropic")) return "Claude";
-    if (host.includes("gemini") || host.includes("google")) return "Gemini";
-    if (host.includes("wenxin") || host.includes("baidu")) return "文心一言";
-    if (host.includes("hunyuan")) return "混元";
-    if (host.includes("perplexity")) return "Perplexity";
-    return host || "未知平台";
-  } catch {
-    return "未知平台";
-  }
-}
-
-function handleClick(event) {
-  const activeInput = findEditable(document.activeElement);
-  const trigger = findSendTrigger(event.target, activeInput);
-  if (!trigger || shouldBypass(trigger)) {
-    return;
+  // ====== 调试开关：设为 false 关闭日志 ======
+  const DEBUG = true;
+  function log(...args) {
+    if (DEBUG) console.log("[AI-Guard]", ...args);
   }
 
-  const input = findRelatedInput(trigger, activeInput);
-  if (!input || shouldBypass(input)) {
-    return;
-  }
+  document.addEventListener("click", handleClick, true);
+  document.addEventListener("keydown", handleKeydown, true);
+  log("content script loaded");
 
-  const content = getEditableText(input);
-  if (!content) {
-    return;
-  }
-
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  reviewAndContinue({ input, trigger, content });
-}
-
-function handleKeydown(event) {
-  if (event.key !== "Enter" || event.shiftKey || event.isComposing) {
-    return;
-  }
-
-  const input = findEditable(event.target);
-  if (!input || shouldBypass(input)) {
-    return;
-  }
-
-  const content = getEditableText(input);
-  if (!content) {
-    return;
-  }
-
-  event.preventDefault();
-  event.stopImmediatePropagation();
-  reviewAndContinue({ input, trigger: null, content });
-}
-
-async function reviewAndContinue({ input, trigger, content }) {
-  try {
-    if (looksAlreadyDesensitized(content)) {
-      continueSend({ input, trigger, content });
-      return;
+  function detectCurrentProvider() {
+    try {
+      const host = window.location.hostname || "";
+      if (host.includes("deepseek")) return "DeepSeek";
+      if (host.includes("chatgpt") || host.includes("openai")) return "ChatGPT";
+      if (host.includes("kimi") || host.includes("moonshot")) return "Kimi";
+      if (host.includes("tongyi") || host.includes("qwen")) return "通义千问";
+      if (host.includes("doubao") || host.includes("volces")) return "豆包";
+      if (host.includes("claude") || host.includes("anthropic"))
+        return "Claude";
+      if (host.includes("gemini") || host.includes("google")) return "Gemini";
+      if (host.includes("wenxin") || host.includes("baidu")) return "文心一言";
+      if (host.includes("hunyuan")) return "混元";
+      if (host.includes("perplexity")) return "Perplexity";
+      return host || "未知平台";
+    } catch {
+      return "未知平台";
     }
+  }
 
-    if (!isChromeRuntimeAvailable()) {
-      window.alert(
-        "[AI 输入安全助手] 插件上下文已失效，请刷新当前页面后重试。",
+  // ====== 核心：在任何 textarea/contenteditable 同一容器内查找可能的发送按钮 ======
+  function findSendButtonNearInput(input) {
+    if (!input) return null;
+    let container = input.parentElement;
+    for (let i = 0; i < 8 && container; i++) {
+      const btns = container.querySelectorAll(
+        'button, [role="button"], div[class*="send"], div[class*="submit"], ' +
+          'svg[class*="send"], svg[class*="submit"], path[class*="send"]',
       );
-      return;
+      if (btns.length > 0) return btns[0];
+      container = container.parentElement;
     }
+    return null;
+  }
 
-    const response = await chrome.runtime.sendMessage({
-      type: "gateway-review-input",
-      payload: {
-        content,
-        language: guessLanguage(content),
-        targetProvider: detectCurrentProvider(),
-      },
-    });
+  // 走到点击事件的按钮（包括其祖先 button）
+  function resolveClickedButton(target) {
+    if (!target) return null;
+    // 向上遍历直到找到一个 button 或 role=button
+    let el = target;
+    while (el && el !== document.body) {
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag === "button") return el;
+      if (el.getAttribute && el.getAttribute("role") === "button") return el;
+      // div/span/svg 配合 clickable 样式也可能充当按钮
+      if ((tag === "div" || tag === "span" || tag === "svg") && el.onclick)
+        return el;
+      el = el.parentElement;
+    }
+    return null;
+  }
 
-    if (!response?.ok) {
-      const allow = window.confirm(
-        `[AI 输入安全助手]\n安全网关检查失败：${response?.error ?? "未知错误"}\n\n点击"确定"继续原文发送，点击"取消"终止发送。`,
-      );
-      if (allow) {
-        continueSend({ input, trigger, content });
+  function handleClick(event) {
+    // 是否点击了一个靠近输入框的可点击元素？
+    const clickedBtn = resolveClickedButton(event.target);
+    if (!clickedBtn || shouldBypass(clickedBtn)) return;
+
+    // 找到页面中的输入框
+    const input = findMainInput();
+    if (!input || shouldBypass(input)) return;
+
+    // 判断这个按钮是否为输入框的关联发送按钮
+    const sendBtn = findSendButtonNearInput(input);
+    if (!sendBtn) return;
+
+    // clickedBtn 必须是 sendBtn 或 sendBtn 的子元素
+    if (clickedBtn !== sendBtn && !sendBtn.contains(clickedBtn)) return;
+
+    const content = getEditableText(input);
+    if (!content) return;
+
+    log("click intercepted", content.substring(0, 50));
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    reviewAndContinue({ input, trigger: clickedBtn, content });
+  }
+
+  function handleKeydown(event) {
+    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+
+    const input = findMainInput();
+    if (!input || shouldBypass(input)) return;
+
+    // 确认焦点或在输入框内部
+    if (
+      !input.contains(document.activeElement) &&
+      document.activeElement !== input
+    )
+      return;
+
+    const content = getEditableText(input);
+    if (!content) return;
+
+    log("enter key intercepted", content.substring(0, 50));
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    reviewAndContinue({ input, trigger: null, content });
+  }
+
+  // ====== 查找页面主输入框 ======
+  function findMainInput() {
+    // 优先找已聚焦的
+    const focused = document.activeElement;
+    if (focused) {
+      const ed = findEditable(focused);
+      if (ed) return ed;
+    }
+    // 找页面中最大的 textarea
+    const textareas = document.querySelectorAll("textarea");
+    let best = null,
+      bestArea = 0;
+    for (const ta of textareas) {
+      const area = ta.offsetWidth * ta.offsetHeight;
+      if (area > bestArea) {
+        best = ta;
+        bestArea = area;
       }
-      return;
     }
+    if (best) return best;
+    // 找 contenteditable
+    return document.querySelector('[contenteditable="true"]');
+  }
 
-    const result = response.result;
-    const auditEventId = result?.auditEventId;
-    const detectedEntities = Array.isArray(result?.detectedEntities)
-      ? result.detectedEntities
-      : [];
-    const desensitizedContent = result?.desensitizedContent || content;
+  // ====== 脱敏后继续发送 ======
+  async function reviewAndContinue({ input, trigger, content }) {
+    try {
+      if (looksAlreadyDesensitized(content)) {
+        continueSend({ input, trigger, content });
+        return;
+      }
+      if (!isChromeRuntimeAvailable()) {
+        window.alert(
+          "[AI 输入安全助手] 插件上下文已失效，请刷新当前页面后重试。",
+        );
+        return;
+      }
 
-    if (!detectedEntities.length || desensitizedContent === content) {
-      continueSend({ input, trigger, content });
-      return;
+      const hasGateway = await checkGatewayConfigured();
+      if (!hasGateway) {
+        const goConfig = window.confirm(
+          "[AI 输入安全助手] 尚未配置安全网关地址，无法进行敏感信息检测。\n\n点击【确定】前往配置页面，点击【取消】本次继续发送原文。",
+        );
+        if (goConfig) {
+          try {
+            await chrome.runtime.sendMessage({ type: "open-config" });
+          } catch {
+            window.open(chrome.runtime.getURL("config.html"));
+          }
+          showActionToast("CONFIG_NEEDED");
+        } else {
+          continueSend({ input, trigger, content });
+        }
+        return;
+      }
+
+      const response = await chrome.runtime.sendMessage({
+        type: "gateway-review-input",
+        payload: {
+          content,
+          language: guessLanguage(content),
+          targetProvider: detectCurrentProvider(),
+        },
+      });
+
+      if (!response?.ok) {
+        const allow = window.confirm(
+          "[AI 输入安全助手] 安全网关无响应。\n\n请确认网关地址正确且后端服务已启动。\n点击【确定】继续原文发送，点击【取消】终止发送。",
+        );
+        if (allow) continueSend({ input, trigger, content });
+        return;
+      }
+
+      const result = response.result;
+      const auditEventId = result?.auditEventId;
+      const detectedEntities = Array.isArray(result?.detectedEntities)
+        ? result.detectedEntities
+        : [];
+      const desensitizedContent = result?.desensitizedContent || content;
+      const riskLevel = result?.riskLevel || "NONE";
+      const decisionAction = result?.decisionAction || "ALLOW";
+
+      if (!detectedEntities.length || riskLevel === "NONE") {
+        continueSend({ input, trigger, content });
+        return;
+      }
+
+      const choice = await Popup.show({
+        detectedEntities,
+        desensitizedContent,
+        originalContent: content,
+        riskLevel,
+        decisionAction,
+        source: "gateway",
+      });
+
+      if (choice === "send") {
+        notifyConfirmAction(auditEventId, "DESENSITIZE_AND_SEND");
+        continueSend({ input, trigger, content: desensitizedContent });
+      } else if (choice === "send-original") {
+        notifyConfirmAction(auditEventId, "SEND_ORIGINAL");
+        continueSend({ input, trigger, content });
+      } else {
+        notifyConfirmAction(auditEventId, "CANCEL");
+      }
+    } catch (error) {
+      log("review failed", error);
     }
+  }
 
-    const choice = await Popup.show({
-      detectedEntities,
-      desensitizedContent,
-      originalContent: content,
+  async function checkGatewayConfigured() {
+    if (gatewayConfiguredCache !== null) return gatewayConfiguredCache;
+    try {
+      const resp = await chrome.runtime.sendMessage({
+        type: "check-gateway-status",
+      });
+      gatewayConfiguredCache = resp?.configured || false;
+    } catch {
+      gatewayConfiguredCache = false;
+    }
+    return gatewayConfiguredCache;
+  }
+
+  function notifyConfirmAction(auditEventId, userAction) {
+    if (!auditEventId) return;
+    getBaseUrl()
+      .then((baseUrl) => {
+        fetch(baseUrl + "/plugin/confirm-action", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ auditEventId, userAction }),
+        }).catch(() => {});
+      })
+      .catch(() => {});
+    showActionToast(userAction);
+  }
+
+  async function getBaseUrl() {
+    try {
+      const result = await chrome.storage.local.get("ai-guard-gateway");
+      let raw = result["ai-guard-gateway"];
+      if (!raw) return "http://127.0.0.1:8080";
+      if (!raw.startsWith("http://") && !raw.startsWith("https://"))
+        raw = "http://" + raw;
+      return raw;
+    } catch {
+      return "http://127.0.0.1:8080";
+    }
+  }
+
+  function showActionToast(userAction) {
+    const labels = {
+      DESENSITIZE_AND_SEND: "已选择发送脱敏内容",
+      SEND_ORIGINAL: "已选择发送原文",
+      CANCEL: "已取消发送",
+      CONFIG_NEEDED: "请先配置安全网关地址",
+    };
+    const msg = labels[userAction] || userAction;
+    const toast = document.createElement("div");
+    toast.textContent = "[AI安全助手] " + msg;
+    toast.style.cssText =
+      "position:fixed;bottom:24px;right:24px;background:#1e293b;color:#f1f5f9;padding:10px 20px;border-radius:8px;z-index:2147483647;font-size:14px;font-family:sans-serif;box-shadow:0 4px 12px rgba(0,0,0,.3);opacity:0;transition:opacity .3s;pointer-events:none";
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => {
+      toast.style.opacity = "1";
     });
+    setTimeout(() => {
+      toast.style.opacity = "0";
+      setTimeout(() => toast.remove(), 300);
+    }, 2500);
+  }
 
-    if (choice === "send") {
-      notifyConfirmAction(auditEventId, "DESENSITIZE_AND_SEND");
-      continueSend({ input, trigger, content: desensitizedContent });
-    } else if (choice === "send-original") {
-      notifyConfirmAction(auditEventId, "SEND_ORIGINAL");
-      continueSend({ input, trigger, content });
-    } else {
-      notifyConfirmAction(auditEventId, "CANCEL");
+  function continueSend({ input, trigger, content }) {
+    setEditableText(input, content);
+    markBypass(input);
+    if (trigger) markBypass(trigger);
+    setTimeout(() => {
+      if (trigger) {
+        trigger.click();
+        return;
+      }
+      const sendBtn = findSendButtonNearInput(input);
+      if (sendBtn) {
+        markBypass(sendBtn);
+        sendBtn.click();
+        return;
+      }
+      dispatchEnter(input);
+    }, 50);
+  }
+
+  // ====== 文本输入框操作 ======
+  function getEditableText(el) {
+    if (!el) return "";
+    if (
+      el.isContentEditable ||
+      (el.nodeName === "DIV" && el.getAttribute("contenteditable") === "true")
+    ) {
+      return (el.textContent || "").trim();
     }
-  } catch (error) {
-    console.error("[AI 输入安全助手] 发送前检查失败", error);
-  }
-}
-
-function notifyConfirmAction(auditEventId, userAction) {
-  if (!auditEventId) return;
-  getBaseUrl().then(baseUrl => {
-    fetch(`${baseUrl}/plugin/confirm-action`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ auditEventId, userAction }),
-    }).catch(() => {});
-  }).catch(() => {});
-  showActionToast(userAction);
-}
-
-async function getBaseUrl() {
-  try {
-    const result = await chrome.storage.local.get("ai-guard-gateway");
-    let raw = result["ai-guard-gateway"];
-    if (!raw) return "http://127.0.0.1:8080";
-    if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
-      raw = "http://" + raw;
+    if (
+      el.nodeName === "TEXTAREA" ||
+      (el.nodeName === "INPUT" &&
+        (el.type === "text" || el.type === "search" || !el.type))
+    ) {
+      return (el.value || "").trim();
     }
-    return raw;
-  } catch {
-    return "http://127.0.0.1:8080";
-  }
-}
-
-function showActionToast(userAction) {
-  const labels = {
-    DESENSITIZE_AND_SEND: "已选择发送脱敏内容",
-    SEND_ORIGINAL: "已选择发送原文",
-    CANCEL: "已取消发送",
-  };
-  const msg = labels[userAction] || userAction;
-  const toast = document.createElement("div");
-  toast.textContent = `[AI安全助手] ${msg}`;
-  toast.style.cssText =
-    "position:fixed;bottom:24px;right:24px;background:#1e293b;color:#f1f5f9;padding:10px 20px;border-radius:8px;z-index:2147483647;font-size:14px;font-family:sans-serif;box-shadow:0 4px 12px rgba(0,0,0,0.3);opacity:0;transition:opacity 0.3s;pointer-events:none";
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => {
-    toast.style.opacity = "1";
-  });
-  setTimeout(() => {
-    toast.style.opacity = "0";
-    setTimeout(() => toast.remove(), 300);
-  }, 2500);
-}
-
-function continueSend({ input, trigger, content }) {
-  setEditableText(input, content);
-  markBypass(input);
-  if (trigger) {
-    markBypass(trigger);
-  }
-
-  window.setTimeout(() => {
-    if (trigger) {
-      trigger.click();
-      return;
-    }
-
-    const sendButton = findSendButtonNear(input);
-    if (sendButton) {
-      markBypass(sendButton);
-      sendButton.click();
-      return;
-    }
-
-    dispatchEnter(input);
-  }, 0);
-}
-
-function findSendTrigger(target, preferredInput) {
-  if (!(target instanceof Element)) {
-    return null;
-  }
-
-  const candidate = target.closest(
-    'button, [role="button"], input[type="submit"]',
-  );
-  if (candidate) {
-    const hintText = [
-      candidate.getAttribute("aria-label"),
-      candidate.getAttribute("title"),
-      candidate.textContent,
-      candidate.id,
-      candidate.className,
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
-
-    if (SEND_KEYWORDS.some((keyword) => hintText.includes(keyword))) {
-      return candidate;
-    }
-  }
-
-  const fallbackCandidate = target.closest(
-    'button, [role="button"], [tabindex], svg, path, div',
-  );
-  if (!fallbackCandidate) {
-    return null;
-  }
-
-  const relatedInput =
-    preferredInput && getEditableText(preferredInput)
-      ? preferredInput
-      : findEditable(document.activeElement);
-  if (!relatedInput || !getEditableText(relatedInput)) {
-    return null;
-  }
-
-  const clickable =
-    fallbackCandidate.closest('button, [role="button"], [tabindex], div') ||
-    fallbackCandidate;
-  return isPossibleIconSendTrigger(clickable, relatedInput) ? clickable : null;
-}
-
-function findRelatedInput(trigger, preferredInput) {
-  if (preferredInput && getEditableText(preferredInput)) {
-    return preferredInput;
-  }
-
-  const container =
-    trigger.closest("form, main, section, div") || document.body;
-  const inputs = container.querySelectorAll(
-    'textarea, input[type="text"], [contenteditable="true"], [contenteditable=""], [role="textbox"]',
-  );
-  for (const input of inputs) {
-    const editable = findEditable(input);
-    const content = editable ? getEditableText(editable) : "";
-    if (content) {
-      return editable;
-    }
-  }
-
-  return findEditable(document.activeElement);
-}
-
-function findSendButtonNear(input) {
-  const container = input.closest("form, main, section, div") || document.body;
-  const candidates = container.querySelectorAll(
-    'button, [role="button"], input[type="submit"], [tabindex], div',
-  );
-  for (const candidate of candidates) {
-    if (candidate !== input && findSendTrigger(candidate, input)) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
-function findEditable(target) {
-  if (!(target instanceof Element)) {
-    return null;
-  }
-
-  if (isEditable(target)) {
-    return target;
-  }
-
-  return target.closest(
-    'textarea, input[type="text"], [contenteditable="true"], [contenteditable=""], [role="textbox"]',
-  );
-}
-
-function isEditable(element) {
-  if (!(element instanceof Element)) {
-    return false;
-  }
-
-  if (element instanceof HTMLTextAreaElement) {
-    return true;
-  }
-
-  if (element instanceof HTMLInputElement) {
-    return ["text", "search"].includes(element.type);
-  }
-
-  const role = element.getAttribute("role");
-  return element.isContentEditable || role === "textbox";
-}
-
-function getEditableText(element) {
-  if (!element) {
     return "";
   }
 
-  if (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement
-  ) {
-    return element.value.trim();
+  function setEditableText(el, text) {
+    if (!el) return;
+    if (
+      el.isContentEditable ||
+      (el.nodeName === "DIV" && el.getAttribute("contenteditable") === "true")
+    ) {
+      el.textContent = text;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if (el.nodeName === "TEXTAREA" || el.nodeName === "INPUT") {
+      const nativeSetter =
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
+          ?.set ||
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")
+          ?.set;
+      if (nativeSetter) nativeSetter.call(el, text);
+      else el.value = text;
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+      el.dispatchEvent(new Event("change", { bubbles: true }));
+    }
   }
 
-  return (element.innerText || element.textContent || "").trim();
-}
-
-function setEditableText(element, value) {
-  if (
-    element instanceof HTMLInputElement ||
-    element instanceof HTMLTextAreaElement
-  ) {
-    element.focus();
-    element.value = value;
-    element.dispatchEvent(new Event("input", { bubbles: true }));
-    element.dispatchEvent(new Event("change", { bubbles: true }));
-    return;
+  function findEditable(el) {
+    while (el) {
+      if (el.isContentEditable) return el;
+      if (
+        (el.nodeName === "TEXTAREA" || el.nodeName === "INPUT") &&
+        (el.type === "text" || el.type === "search" || !el.type)
+      )
+        return el;
+      if (el.getAttribute && el.getAttribute("contenteditable") === "true")
+        return el;
+      el = el.parentElement;
+    }
+    return null;
   }
 
-  if (
-    element &&
-    (element.isContentEditable || element.getAttribute("role") === "textbox")
-  ) {
-    element.focus();
-    element.textContent = value;
-    element.dispatchEvent(
-      new InputEvent("input", {
+  function dispatchEnter(input) {
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        code: "Enter",
+        keyCode: 13,
+        which: 13,
         bubbles: true,
-        data: value,
-        inputType: "insertText",
+        cancelable: true,
       }),
     );
   }
-}
 
-function dispatchEnter(element) {
-  markBypass(element);
-  const event = new KeyboardEvent("keydown", {
-    key: "Enter",
-    code: "Enter",
-    which: 13,
-    keyCode: 13,
-    bubbles: true,
-  });
-  element.dispatchEvent(event);
-}
-
-function markBypass(element) {
-  bypassElements.set(element, Date.now() + 1000);
-}
-
-function shouldBypass(element) {
-  let current = element;
-  let depth = 0;
-  while (current instanceof Element && depth < 4) {
-    const until = bypassElements.get(current);
-    if (until) {
-      if (until < Date.now()) {
-        bypassElements.delete(current);
-        return false;
-      }
-      bypassElements.delete(current);
-      return true;
+  // ====== 辅助 ======
+  function isChromeRuntimeAvailable() {
+    try {
+      return !!(chrome && chrome.runtime && chrome.runtime.id);
+    } catch {
+      return false;
     }
-    current = current.parentElement;
-    depth += 1;
   }
-  return false;
-}
-
-function isPossibleIconSendTrigger(candidate, input) {
-  if (!(candidate instanceof Element) || !(input instanceof Element)) {
-    return false;
+  function shouldBypass(el) {
+    return bypassElements.has(el);
   }
-
-  const textHint = [
-    candidate.getAttribute("aria-label"),
-    candidate.getAttribute("title"),
-    candidate.textContent,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .trim();
-  const hasGraphic = !!candidate.querySelector?.("svg, path, img");
-  const tagName = candidate.tagName?.toLowerCase() || "";
-  const looksClickable =
-    tagName === "button" ||
-    tagName === "div" ||
-    candidate.getAttribute("role") === "button" ||
-    candidate.hasAttribute("tabindex");
-  const sameContainer = hasSharedNearbyContainer(candidate, input);
-
-  return (
-    sameContainer && looksClickable && (hasGraphic || textHint.length <= 2)
-  );
-}
-
-function hasSharedNearbyContainer(left, right) {
-  const leftAncestors = collectAncestors(left, 8);
-  const rightAncestors = new Set(collectAncestors(right, 8));
-  return leftAncestors.some((ancestor) => rightAncestors.has(ancestor));
-}
-
-function collectAncestors(element, depthLimit) {
-  const ancestors = [];
-  let current = element;
-  let depth = 0;
-  while (current instanceof Element && depth < depthLimit) {
-    ancestors.push(current);
-    current = current.parentElement;
-    depth += 1;
+  function markBypass(el) {
+    bypassElements.set(el, true);
   }
-  return ancestors;
-}
-
-function guessLanguage(content) {
-  return /[\u4e00-\u9fa5]/.test(content) ? "zh" : "en";
-}
-
-function looksAlreadyDesensitized(content) {
-  return /\[(?:PHONE|ID_CARD|BANK_CARD|EMAIL|ADDRESS|NAME|PERSON|MASKED)_[0-9]+\]/.test(
-    content,
-  );
-}
-
-function isChromeRuntimeAvailable() {
-  return (
-    typeof chrome !== "undefined" &&
-    !!chrome.runtime &&
-    !!chrome.runtime.id &&
-    typeof chrome.runtime.sendMessage === "function"
-  );
-}
+  function looksAlreadyDesensitized(t) {
+    return t && /\[[A-Z_]+_\d+\]/.test(t);
+  }
+  function guessLanguage(t) {
+    if (!t) return "zh";
+    return (t.match(/[\u4e00-\u9fa5]/g) || []).length > t.length * 0.3
+      ? "zh"
+      : "en";
+  }
+})();
