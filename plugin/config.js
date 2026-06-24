@@ -72,12 +72,17 @@ async function testConnection() {
   }
   statusEl.textContent = "测试中...";
   statusEl.className = "status";
+  // 规范化 URL：若用户已输入协议头则直接使用，否则补 http://
+  let baseUrl = gateway;
+  if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+    baseUrl = "http://" + baseUrl;
+  }
   try {
-    const res = await fetch(`http://${gateway}/actuator/health`, {
+    const res = await fetch(`${baseUrl}/actuator/health`, {
       method: "GET",
     });
     if (res.ok) {
-      statusEl.textContent = `连接成功 (gateway: ${gateway})`;
+      statusEl.textContent = `连接成功 (${baseUrl})`;
       statusEl.className = "status ok";
     } else {
       statusEl.textContent = `服务器返回 ${res.status}`;

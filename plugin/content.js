@@ -34,16 +34,15 @@
     }
   }
 
-  // ====== 核心：在任何 textarea/contenteditable 同一容器内查找可能的发送按钮 ======
-  function findSendButtonNearInput(input) {
+  /**
+   * 查找 input 所在的功能容器（向上最多 10 层，找到第一个含按钮的祖先）。
+   * 用于判断被点击的按钮是否属于该输入区域。
+   */
+  function findInputContainer(input) {
     if (!input) return null;
     let container = input.parentElement;
-    for (let i = 0; i < 8 && container; i++) {
-      const btns = container.querySelectorAll(
-        'button, [role="button"], div[class*="send"], div[class*="submit"], ' +
-          'svg[class*="send"], svg[class*="submit"], path[class*="send"]',
-      );
-      if (btns.length > 0) return btns[0];
+    for (let i = 0; i < 10 && container && container !== document.body; i++) {
+      if (container.querySelector('button, [role="button"]')) return container;
       container = container.parentElement;
     }
     return null;
@@ -52,62 +51,168 @@
   // 走到点击事件的按钮（包括其祖先 button）
   function resolveClickedButton(target) {
     if (!target) return null;
-    // 向上遍历直到找到一个 button 或 role=button
     let el = target;
     while (el && el !== document.body) {
       const tag = (el.tagName || "").toLowerCase();
       if (tag === "button") return el;
       if (el.getAttribute && el.getAttribute("role") === "button") return el;
-      // div/span/svg 配合 clickable 样式也可能充当按钮
-      if ((tag === "div" || tag === "span" || tag === "svg") && el.onclick)
-        return el;
       el = el.parentElement;
     }
     return null;
   }
 
+  /**
+   * 判断 clickedBtn 是否为 input 关联的发送按钮：
+   * 策略：按钮在 input 的容器范围内，且不是明显的非发送功能按钮。
+   */
+  function isSendButtonForInput(clickedBtn, input) {
+    const container = findInputContainer(input);
+    if (!container) {
+      log("isSendButtonForInput: no container found for input");
+      return false;
+    }
+    if (!container.contains(clickedBtn)) {
+      log("isSendButtonForInput: clickedBtn is outside input container");
+      return false;
+    }
+    // 排除明显的非发送功能按钮（aria-label / title / class 关键词匹配）
+    const label = (
+      (clickedBtn.getAttribute("aria-label") || "") +
+      " " +
+      (clickedBtn.getAttribute("title") || "") +
+      " " +
+      (clickedBtn.className?.toString() || "")
+    ).toLowerCase();
+    const nonSendKeywords = [
+      "upload",
+      "attach",
+      "file",
+      "image",
+      "photo",
+      "clear",
+      "delete",
+      "close",
+      "stop",
+      "voice",
+      "microphone",
+      "emoji",
+      "gif",
+      "上传",
+      "附件",
+      "图片",
+      "清空",
+      "删除",
+      "停止",
+      "语音",
+    ];
+    const isNonSend = nonSendKeywords.some((k) => label.includes(k));
+    if (isNonSend) {
+      log(
+        "isSendButtonForInput: skip non-send button, label snippet=",
+        label.slice(0, 80),
+      );
+      return false;
+    }
+    return true;
+  }
+
   function handleClick(event) {
-    // 是否点击了一个靠近输入框的可点击元素？
     const clickedBtn = resolveClickedButton(event.target);
-    if (!clickedBtn || shouldBypass(clickedBtn)) return;
+    if (!clickedBtn) {
+      log(
+        "handleClick skip: no button resolved from",
+        event.target?.tagName,
+        event.target?.className?.toString().slice(0, 40),
+      );
+      return;
+    }
+    if (shouldBypass(clickedBtn)) {
+      log("handleClick skip: clickedBtn is bypass-marked");
+      return;
+    }
 
-    // 找到页面中的输入框
     const input = findMainInput();
-    if (!input || shouldBypass(input)) return;
+    if (!input) {
+      log("handleClick skip: no main input found on page");
+      return;
+    }
+    if (shouldBypass(input)) {
+      log("handleClick skip: input is bypass-marked");
+      return;
+    }
 
-    // 判断这个按钮是否为输入框的关联发送按钮
-    const sendBtn = findSendButtonNearInput(input);
-    if (!sendBtn) return;
-
-    // clickedBtn 必须是 sendBtn 或 sendBtn 的子元素
-    if (clickedBtn !== sendBtn && !sendBtn.contains(clickedBtn)) return;
+    if (!isSendButtonForInput(clickedBtn, input)) {
+      log("handleClick skip: not a send button for this input", {
+        btnTag: clickedBtn?.tagName,
+        btnClass: clickedBtn?.className?.toString().slice(0, 40),
+        btnLabel: clickedBtn?.getAttribute("aria-label"),
+      });
+      return;
+    }
 
     const content = getEditableText(input);
-    if (!content) return;
+    if (!content) {
+      log("handleClick skip: input content is empty");
+      return;
+    }
 
-    log("click intercepted", content.substring(0, 50));
+    log(
+      "click intercepted, provider=",
+      detectCurrentProvider(),
+      "contentLen=",
+      content.length,
+    );
     event.preventDefault();
     event.stopImmediatePropagation();
     reviewAndContinue({ input, trigger: clickedBtn, content });
   }
 
   function handleKeydown(event) {
-    if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+    if (event.key !== "Enter") return;
+    if (event.shiftKey) {
+      log("handleKeydown skip: Shift+Enter, skip");
+      return;
+    }
+    if (event.isComposing) {
+      log("handleKeydown skip: IME composition in progress");
+      return;
+    }
 
     const input = findMainInput();
-    if (!input || shouldBypass(input)) return;
+    if (!input) {
+      log("handleKeydown skip: no main input found");
+      return;
+    }
+    if (shouldBypass(input)) {
+      log("handleKeydown skip: input is bypass-marked");
+      return;
+    }
 
     // 确认焦点或在输入框内部
     if (
       !input.contains(document.activeElement) &&
       document.activeElement !== input
-    )
+    ) {
+      log(
+        "handleKeydown skip: focus mismatch, activeElement=",
+        document.activeElement?.tagName,
+        document.activeElement?.className?.toString().slice(0, 40),
+      );
       return;
+    }
 
     const content = getEditableText(input);
-    if (!content) return;
+    if (!content) {
+      log("handleKeydown skip: input content is empty");
+      return;
+    }
 
-    log("enter key intercepted", content.substring(0, 50));
+    log(
+      "enter key intercepted, provider=",
+      detectCurrentProvider(),
+      "contentLen=",
+      content.length,
+    );
     event.preventDefault();
     event.stopImmediatePropagation();
     reviewAndContinue({ input, trigger: null, content });
@@ -139,22 +244,42 @@
 
   // ====== 脱敏后继续发送 ======
   async function reviewAndContinue({ input, trigger, content }) {
+    const provider = detectCurrentProvider();
+    log(
+      "reviewAndContinue start, provider=",
+      provider,
+      "contentLen=",
+      content?.length,
+    );
     try {
       if (looksAlreadyDesensitized(content)) {
+        log(
+          "reviewAndContinue: content looks already desensitized, skip check → continueSend",
+        );
         continueSend({ input, trigger, content });
         return;
       }
       if (!isChromeRuntimeAvailable()) {
+        log(
+          "reviewAndContinue: chrome.runtime unavailable, extension context may be invalidated",
+        );
         window.alert(
           "[AI 输入安全助手] 插件上下文已失效，请刷新当前页面后重试。",
         );
         return;
       }
 
+      log("reviewAndContinue: checking gateway configuration...");
       const hasGateway = await checkGatewayConfigured();
+      log("reviewAndContinue: hasGateway=", hasGateway);
       if (!hasGateway) {
         const goConfig = window.confirm(
           "[AI 输入安全助手] 尚未配置安全网关地址，无法进行敏感信息检测。\n\n点击【确定】前往配置页面，点击【取消】本次继续发送原文。",
+        );
+        log(
+          "reviewAndContinue: user chose goConfig=",
+          goConfig,
+          "(gateway not configured)",
         );
         if (goConfig) {
           try {
@@ -169,16 +294,30 @@
         return;
       }
 
+      log(
+        "reviewAndContinue: sending gateway-review-input, provider=",
+        provider,
+      );
       const response = await chrome.runtime.sendMessage({
         type: "gateway-review-input",
         payload: {
           content,
           language: guessLanguage(content),
-          targetProvider: detectCurrentProvider(),
+          targetProvider: provider,
         },
       });
 
+      log(
+        "reviewAndContinue: gateway response ok=",
+        response?.ok,
+        "error=",
+        response?.error,
+      );
       if (!response?.ok) {
+        log(
+          "reviewAndContinue: gateway check failed, error detail:",
+          response?.error,
+        );
         const allow = window.confirm(
           "[AI 输入安全助手] 安全网关无响应。\n\n请确认网关地址正确且后端服务已启动。\n点击【确定】继续原文发送，点击【取消】终止发送。",
         );
@@ -195,11 +334,29 @@
       const riskLevel = result?.riskLevel || "NONE";
       const decisionAction = result?.decisionAction || "ALLOW";
 
+      log(
+        "reviewAndContinue: detection result — riskLevel=",
+        riskLevel,
+        "decisionAction=",
+        decisionAction,
+        "entities count=",
+        detectedEntities.length,
+        "auditEventId=",
+        auditEventId,
+      );
+
       if (!detectedEntities.length || riskLevel === "NONE") {
+        log(
+          "reviewAndContinue: no sensitive entities or riskLevel=NONE → continueSend (clean pass)",
+        );
         continueSend({ input, trigger, content });
         return;
       }
 
+      log(
+        "reviewAndContinue: showing Popup to user, entityTypes=",
+        detectedEntities.map((e) => e.type),
+      );
       const choice = await Popup.show({
         detectedEntities,
         desensitizedContent,
@@ -209,6 +366,7 @@
         source: "gateway",
       });
 
+      log("reviewAndContinue: user Popup choice=", choice);
       if (choice === "send") {
         notifyConfirmAction(auditEventId, "DESENSITIZE_AND_SEND");
         continueSend({ input, trigger, content: desensitizedContent });
@@ -219,21 +377,38 @@
         notifyConfirmAction(auditEventId, "CANCEL");
       }
     } catch (error) {
-      log("review failed", error);
+      log("reviewAndContinue: uncaught error", {
+        message: error?.message,
+        stack: error?.stack,
+        provider,
+        contentLen: content?.length,
+      });
     }
   }
 
   async function checkGatewayConfigured() {
-    if (gatewayConfiguredCache !== null) return gatewayConfiguredCache;
+    if (gatewayConfiguredCache === true) {
+      log("checkGatewayConfigured: cache hit → true");
+      return true;
+    }
     try {
       const resp = await chrome.runtime.sendMessage({
         type: "check-gateway-status",
       });
-      gatewayConfiguredCache = resp?.configured || false;
-    } catch {
-      gatewayConfiguredCache = false;
+      const configured = resp?.configured || false;
+      log(
+        "checkGatewayConfigured: background responded configured=",
+        configured,
+      );
+      if (configured) gatewayConfiguredCache = true; // 只缓存"已配置"状态
+      return configured;
+    } catch (e) {
+      log(
+        "checkGatewayConfigured: sendMessage failed (background may be inactive):",
+        e?.message,
+      );
+      return false; // 出错不缓存，下次还会重试
     }
-    return gatewayConfiguredCache;
   }
 
   function notifyConfirmAction(auditEventId, userAction) {
@@ -294,7 +469,13 @@
         trigger.click();
         return;
       }
-      const sendBtn = findSendButtonNearInput(input);
+      // Enter 键触发时无 trigger，从容器内找发送按钮（取最后一个，通常发送按钮在末尾）
+      const container = findInputContainer(input);
+      const allBtns = container
+        ? Array.from(container.querySelectorAll('button, [role="button"]'))
+        : [];
+      const sendBtn =
+        allBtns.filter((b) => isSendButtonForInput(b, input)).pop() || null;
       if (sendBtn) {
         markBypass(sendBtn);
         sendBtn.click();
@@ -334,11 +515,12 @@
       return;
     }
     if (el.nodeName === "TEXTAREA" || el.nodeName === "INPUT") {
-      const nativeSetter =
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")
-          ?.set ||
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")
-          ?.set;
+      // 根据元素类型取对应的 native setter，避免跨类型调用导致 Illegal invocation
+      const proto =
+        el.nodeName === "TEXTAREA"
+          ? HTMLTextAreaElement.prototype
+          : HTMLInputElement.prototype;
+      const nativeSetter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
       if (nativeSetter) nativeSetter.call(el, text);
       else el.value = text;
       el.dispatchEvent(new Event("input", { bubbles: true }));
@@ -389,7 +571,8 @@
     bypassElements.set(el, true);
   }
   function looksAlreadyDesensitized(t) {
-    return t && /\[[A-Z_]+_\d+\]/.test(t);
+    // 匹配后端实际返回格式 [PHONE_NUMBER]、[ID_CARD] 等（不带数字后缀）
+    return t && /\[[A-Z][A-Z_]*\]/.test(t);
   }
   function guessLanguage(t) {
     if (!t) return "zh";

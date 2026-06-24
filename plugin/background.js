@@ -4,36 +4,56 @@ const STORAGE_KEY_USER_ID = "ai-guard-user-id";
 const STORAGE_KEY_USER_NAME = "ai-guard-user-name";
 const STORAGE_KEY_DEPT = "ai-guard-dept";
 
+function log(...args) {
+  console.log("[AI-Guard BG]", ...args);
+}
+
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[AI 输入安全助手] 已安装");
+  log("extension installed/updated");
 });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  log(
+    "onMessage received type=",
+    message?.type,
+    "from tabId=",
+    sender?.tab?.id,
+  );
   if (message?.type === "gateway-review-input") {
     reviewInput(message.payload)
-      .then((result) => sendResponse({ ok: true, result }))
-      .catch((error) =>
-        sendResponse({
-          ok: false,
-          error: error instanceof Error ? error.message : String(error),
-        }),
-      );
+      .then((result) => {
+        log(
+          "gateway-review-input success, auditEventId=",
+          result?.auditEventId,
+          "riskLevel=",
+          result?.riskLevel,
+        );
+        sendResponse({ ok: true, result });
+      })
+      .catch((error) => {
+        const errMsg = error instanceof Error ? error.message : String(error);
+        log("gateway-review-input failed:", errMsg, error?.stack);
+        sendResponse({ ok: false, error: errMsg });
+      });
     return true;
   }
   if (message?.type === "check-gateway-status") {
     (async () => {
       const configured = await hasConfiguredGateway();
+      log("check-gateway-status responded configured=", configured);
       sendResponse({ configured });
     })();
     return true;
   }
   if (message?.type === "open-config") {
-    chrome.action.openPopup().catch(() => {
+    chrome.action.openPopup().catch((e) => {
+      log("openPopup failed:", e?.message, "→ fallback to chrome.tabs.create");
       chrome.tabs.create({ url: chrome.runtime.getURL("config.html") });
     });
     sendResponse({ ok: true });
     return false;
   }
+  log("onMessage: unhandled message type=", message?.type);
   return false;
 });
 
@@ -45,8 +65,16 @@ async function hasConfiguredGateway() {
   try {
     const result = await chrome.storage.local.get(STORAGE_KEY_GATEWAY);
     const raw = result[STORAGE_KEY_GATEWAY];
-    return raw && raw.trim().length > 0;
-  } catch {
+    const configured = !!(raw && raw.trim().length > 0);
+    log(
+      "hasConfiguredGateway: raw=",
+      raw ? `"${raw.trim().slice(0, 40)}"` : "(empty)",
+      "→ configured=",
+      configured,
+    );
+    return configured;
+  } catch (e) {
+    log("hasConfiguredGateway: storage.local.get failed:", e?.message);
     return false;
   }
 }
@@ -54,10 +82,17 @@ async function hasConfiguredGateway() {
 async function getBaseUrl() {
   const result = await chrome.storage.local.get(STORAGE_KEY_GATEWAY);
   let raw = result[STORAGE_KEY_GATEWAY];
-  if (!raw) return DEFAULT_GATEWAY;
+  if (!raw) {
+    log(
+      "getBaseUrl: no gateway configured, using DEFAULT_GATEWAY=",
+      DEFAULT_GATEWAY,
+    );
+    return DEFAULT_GATEWAY;
+  }
   if (!raw.startsWith("http://") && !raw.startsWith("https://")) {
     raw = "http://" + raw;
   }
+  log("getBaseUrl: resolved baseUrl=", raw);
   return raw;
 }
 
@@ -65,30 +100,63 @@ async function reviewInput(payload) {
   const userId = await getUserId();
   const department = await getDept();
   const baseUrl = await getBaseUrl();
+  const requestBody = {
+    content: payload?.content ?? "",
+    dataType: "TEXT",
+    language: payload?.language ?? "zh",
+    userId: payload?.userId ?? userId,
+    department: payload?.department ?? department,
+    targetProvider: payload?.targetProvider ?? "",
+    strictMode: false,
+    autoScenarioDetection: false,
+  };
 
-  const response = await fetch(`${baseUrl}/plugin/audit-check`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "application/json",
-    },
-    body: JSON.stringify({
-      content: payload?.content ?? "",
-      dataType: "TEXT",
-      language: payload?.language ?? "zh",
-      userId: payload?.userId ?? userId,
-      department: payload?.department ?? department,
-      targetProvider: payload?.targetProvider ?? "",
-      strictMode: false,
-      autoScenarioDetection: false,
-    }),
-  });
+  log(
+    "reviewInput: POST",
+    baseUrl + "/plugin/audit-check",
+    "userId=",
+    requestBody.userId,
+    "targetProvider=",
+    requestBody.targetProvider,
+    "contentLen=",
+    requestBody.content.length,
+  );
 
-  if (!response.ok) {
-    throw new Error(`网关检查失败，状态码: ${response.status}`);
+  let response;
+  try {
+    response = await fetch(`${baseUrl}/plugin/audit-check`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (networkErr) {
+    log(
+      "reviewInput: network error (backend unreachable?):",
+      networkErr?.message,
+    );
+    throw networkErr;
   }
 
-  return response.json();
+  log("reviewInput: response status=", response.status, response.statusText);
+  if (!response.ok) {
+    const bodyText = await response.text().catch(() => "");
+    log("reviewInput: non-OK response body:", bodyText.slice(0, 200));
+    throw new Error(
+      `网关检查失败，状态码: ${response.status}，响应: ${bodyText.slice(0, 100)}`,
+    );
+  }
+
+  const json = await response.json();
+  log(
+    "reviewInput: parsed response riskLevel=",
+    json?.riskLevel,
+    "entities=",
+    json?.detectedEntities?.length ?? 0,
+  );
+  return json;
 }
 
 // ========== 用户身份管理（Manifest V3 → chrome.storage）==========

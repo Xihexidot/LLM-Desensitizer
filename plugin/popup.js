@@ -239,19 +239,20 @@ const Popup = (() => {
         resolve(value);
       }
 
-      // 按钮事件
+      // 按钮事件：stopPropagation 防止冒泡到页面的 capture 监听器触发 handleClick
       if (btnSend) {
-        btnSend.addEventListener("click", () => finish("send"));
+        btnSend.addEventListener("click", (e) => { e.stopPropagation(); finish("send"); });
       }
       if (btnOriginal) {
-        btnOriginal.addEventListener("click", () => finish("send-original"));
+        btnOriginal.addEventListener("click", (e) => { e.stopPropagation(); finish("send-original"); });
       }
       if (btnCancel) {
-        btnCancel.addEventListener("click", () => finish("cancel"));
+        btnCancel.addEventListener("click", (e) => { e.stopPropagation(); finish("cancel"); });
       }
 
-      // 点遮罩层取消
+      // 点遮罩层取消：同样阻止冒泡
       overlay.addEventListener("click", (e) => {
+        e.stopPropagation();
         if (e.target === overlay) finish("cancel");
       });
 
