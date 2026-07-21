@@ -11,10 +11,10 @@ import java.net.URL;
 @Configuration
 public class QdrantConfig {
 
-    @Value("${QDRANT_URL}")
+    @Value("${QDRANT_URL:http://localhost:6333}")
     private String qdrantUrl;
 
-    @Value("${QDRANT_API_KEY}")
+    @Value("${QDRANT_API_KEY:}")
     private String apiKey;
 
     @Bean

@@ -19,7 +19,7 @@ public class RagKnowledgeService {
     @Autowired
     private QdrantClient qdrantClient;
 
-    @Value("${QDRANT_COLLECTION}")
+    @Value("${QDRANT_COLLECTION:knowledge_base}")
     private String collectionName;
 
     /**

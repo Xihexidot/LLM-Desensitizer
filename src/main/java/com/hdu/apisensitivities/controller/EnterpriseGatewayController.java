@@ -8,6 +8,7 @@ import com.hdu.apisensitivities.service.gateway.EnterpriseGatewayApplicationServ
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletRequest;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,7 +32,8 @@ public class EnterpriseGatewayController {
     @PostMapping("/chat/completions")
     public ResponseEntity<Map<String, Object>> chatCompletions(
             @RequestBody Map<String, Object> body,
-            @RequestHeader Map<String, String> headers) {
+            @RequestHeader Map<String, String> headers,
+            HttpServletRequest request) {
 
         String content = EnterpriseGatewayApplicationService.extractContentFromMessages(body.get("messages"));
         if (content.isBlank()) {
@@ -43,15 +45,34 @@ public class EnterpriseGatewayController {
         String model = body.get("model") instanceof String s ? s : null;
         LlmProvider provider = EnterpriseGatewayApplicationService.resolveProviderFromModel(model);
 
+        // 优先从拦截器注入的身份属性取值（绑定 API Key 的身份），没有则回退到 header
+        String userId = getAttributeOrDefault(request, "userId", headers, "x-user-id");
+        String department = getAttributeOrDefault(request, "department", headers, "x-department");
+        String tenantId = getAttributeOrDefault(request, "tenantId", headers, "x-tenant-id");
+        String channel = headers.getOrDefault("x-channel", headers.getOrDefault("X-Channel", "backend-api"));
+        String appId = headers.getOrDefault("x-app-id", headers.getOrDefault("X-App-Id", "default"));
+
         Map<String, String> userHeaders = new HashMap<>();
-        userHeaders.put("userId", headers.getOrDefault("x-user-id", headers.getOrDefault("X-User-Id", "")));
-        userHeaders.put("department", headers.getOrDefault("x-department", headers.getOrDefault("X-Department", "")));
-        userHeaders.put("channel", headers.getOrDefault("x-channel", headers.getOrDefault("X-Channel", "backend-api")));
-        userHeaders.put("tenantId", headers.getOrDefault("x-tenant-id", headers.getOrDefault("X-Tenant-Id", "default")));
-        userHeaders.put("appId", headers.getOrDefault("x-app-id", headers.getOrDefault("X-App-Id", "default")));
+        userHeaders.put("userId", userId);
+        userHeaders.put("department", department);
+        userHeaders.put("channel", channel);
+        userHeaders.put("tenantId", tenantId);
+        userHeaders.put("appId", appId);
 
         Map<String, Object> result = gatewayService.processChatCompletions(content, provider, userHeaders);
         return ResponseEntity.ok(result);
+    }
+
+    /**
+     * 辅助方法：优先从 request attribute 取值，没有则回退到 header
+     */
+    private String getAttributeOrDefault(HttpServletRequest request, String attributeName, Map<String, String> headers,
+            String headerKey) {
+        Object attr = request.getAttribute(attributeName);
+        if (attr != null && !attr.toString().isBlank()) {
+            return attr.toString();
+        }
+        return headers.getOrDefault(headerKey, headers.getOrDefault(headerKey.toUpperCase(), ""));
     }
 
     // ========== 文件任务 ==========
@@ -64,7 +85,8 @@ public class EnterpriseGatewayController {
         String department = body.getOrDefault("department", "").toString();
         String tenantId = body.getOrDefault("tenantId", "default").toString();
         String appId = body.getOrDefault("appId", "default").toString();
-        return ResponseEntity.ok(gatewayService.createFileTask(fileName, sceneCode, userId, department, tenantId, appId));
+        return ResponseEntity
+                .ok(gatewayService.createFileTask(fileName, sceneCode, userId, department, tenantId, appId));
     }
 
     @GetMapping("/files/tasks/{taskId}")
