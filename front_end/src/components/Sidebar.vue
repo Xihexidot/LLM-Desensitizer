@@ -60,44 +60,6 @@
 
       <a
         class="nav-item"
-        href="#section-history"
-        @click.prevent="toggleHistory"
-        >历史对话</a
-      >
-      <div
-        v-if="showHistory"
-        class="history-inline"
-      >
-        <div class="history-header">
-          <span>最近记录</span>
-          <button
-            class="history-close"
-            @click="toggleHistory"
-          >
-            收起
-          </button>
-        </div>
-        <ul class="history-list">
-          <li
-            v-for="h in shortList"
-            :key="h.id"
-            class="history-item"
-            @click="onPick(h.id)"
-          >
-            <div class="history-time">
-              {{ new Date(h.timestamp).toLocaleString() }}
-            </div>
-            <div class="history-preview">
-              {{
-                (h.desensitizedPrompt || h.originalPrompt || "").slice(0, 48)
-              }}
-            </div>
-          </li>
-        </ul>
-      </div>
-
-      <a
-        class="nav-item"
         href="#section-about"
         >关于</a
       >
@@ -122,9 +84,7 @@
 </template>
 
 <script setup>
-  import { ref, computed } from "vue";
   const emit = defineEmits([
-    "select-history",
     "toggle-theme",
     "check-health",
     "scroll-llm",
@@ -137,20 +97,7 @@
   const props = defineProps({
     healthStatus: String,
     healthLoading: Boolean,
-    histories: { type: Array, default: () => [] },
   });
-  const showHistory = ref(false);
-  const shortList = computed(() => {
-    const arr = Array.isArray(props.histories) ? props.histories : [];
-    const last = arr.slice(-10);
-    return last.reverse();
-  });
-  function toggleHistory() {
-    showHistory.value = !showHistory.value;
-  }
-  function onPick(id) {
-    emit("select-history", id);
-  }
 </script>
 
 <style scoped>
@@ -376,51 +323,6 @@
     color: var(--primary);
     transform: translateY(-1px);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  }
-  .history-inline {
-    padding: 12px;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    background: var(--card-bg);
-    margin: 0 0 16px 0;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-  }
-  .history-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 8px;
-  }
-  .history-close {
-    border: 1px solid #e5e7eb;
-    background: #f3f4f6;
-    color: #374151;
-    border-radius: 6px;
-    padding: 4px 8px;
-    cursor: pointer;
-  }
-  .history-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    max-height: 220px;
-    overflow-y: auto;
-  }
-  .history-item {
-    padding: 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    margin-bottom: 6px;
-    background: var(--card-bg);
-  }
-  .history-time {
-    font-size: 12px;
-    color: #6b7280;
-  }
-  .history-preview {
-    font-size: 13px;
-    color: var(--text);
-    margin-top: 4px;
   }
   @media (max-width: 980px) {
     .sidebar {

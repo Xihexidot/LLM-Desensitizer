@@ -2,7 +2,6 @@
   import { ref, onMounted } from "vue";
   import LlmDesensitization from "./components/LlmDesensitization.vue";
   import Sidebar from "./components/Sidebar.vue";
-  import ConversationHistory from "./components/ConversationHistory.vue";
   import DashboardStats from "./components/DashboardStats.vue";
   import AuditList from "./components/AuditList.vue";
   import AuditDetail from "./components/AuditDetail.vue";
@@ -93,50 +92,10 @@
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
-  const STORAGE_KEY = "conversation_history_v1";
-  const histories = ref([]);
-  const activeHistoryId = ref(null);
-  const showHistorySection = ref(false);
   const THEME_KEY = "app_theme";
   const theme = ref("light");
 
-  function loadHistory() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      histories.value = raw ? JSON.parse(raw) : [];
-    } catch {
-      histories.value = [];
-    }
-  }
-
-  function persistHistory() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(histories.value));
-    } catch {}
-  }
-
-  function saveConversation(payload) {
-    const item = {
-      id: payload.id,
-      timestamp: payload.timestamp,
-      provider: payload.provider,
-      originalPrompt: payload.originalPrompt,
-      desensitizedPrompt: payload.desensitizedPrompt,
-      responseText: payload.responseText,
-    };
-    histories.value.push(item);
-    if (histories.value.length > 200)
-      histories.value = histories.value.slice(-200);
-    persistHistory();
-  }
-
-  function clearHistory() {
-    histories.value = [];
-    persistHistory();
-  }
-
   onMounted(() => {
-    loadHistory();
     const saved = localStorage.getItem(THEME_KEY);
     if (saved === "dark" || saved === "light") {
       theme.value = saved;
@@ -145,13 +104,6 @@
       applyTheme();
     }
   });
-
-  function jumpToHistory(id) {
-    showHistorySection.value = true;
-    activeHistoryId.value = id;
-    const el = document.getElementById("section-history");
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }
 
   function applyTheme() {
     const root = document.documentElement;
@@ -175,8 +127,6 @@
       @scroll-llm="scrollToLlm"
       :healthStatus="healthStatus"
       :healthLoading="healthLoading"
-      :histories="histories"
-      @select-history="jumpToHistory"
       @toggle-theme="toggleTheme"
       @show-home="showHome"
       @show-dashboard="showDashboard"
@@ -234,21 +184,7 @@
           class="card full-width"
           id="section-llm"
         >
-          <LlmDesensitization
-            @conversation-completed="saveConversation"
-          />
-        </div>
-
-        <div
-          v-if="showHistorySection"
-          class="card full-width"
-          id="section-history"
-        >
-          <ConversationHistory
-            :histories="histories"
-            :activeId="activeHistoryId"
-            @clear="clearHistory"
-          />
+          <LlmDesensitization />
         </div>
       </main>
 
@@ -256,10 +192,7 @@
         class="footer"
         id="section-about"
       >
-        <p>
-          ApiSensitivities 测试工具 &copy; {{ new Date().getFullYear() }} -
-          HHB&ZSM
-        </p>
+        <p>ApiSensitivities &copy; {{ new Date().getFullYear() }}</p>
       </footer>
     </div>
   </div>

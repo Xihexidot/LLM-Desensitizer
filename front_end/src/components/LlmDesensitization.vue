@@ -3,7 +3,6 @@
   import { API_BASE_URL } from "../config";
   import LlmProcessingProgress from "./LlmProcessingProgress.vue";
   import LlmDetectionResults from "./LlmDetectionResults.vue";
-  import LlmFeatureCards from "./LlmFeatureCards.vue";
   import LlmResultsPanel from "./LlmResultsPanel.vue";
   import {
     buildMarkdownReport,
@@ -12,7 +11,6 @@
     copyElementScreenshotOrDownload,
   } from "../utils/llmReportExport";
 
-  const emit = defineEmits(["conversation-completed"]);
   const props = defineProps({
     scenarioSettings: {
       type: Object,
@@ -366,18 +364,8 @@
   }
 
   function saveConversationHistory(originalPrompt, desensitizedPrompt) {
-    try {
-      const text = getLlmText();
-      startTypewriter(text);
-      emit("conversation-completed", {
-        id: formData.sessionId + "-" + Date.now().toString(),
-        timestamp: Date.now(),
-        provider: llmProvider.value,
-        originalPrompt,
-        desensitizedPrompt,
-        responseText: text,
-      });
-    } catch {}
+    const text = getLlmText();
+    startTypewriter(text);
   }
 
   // 处理LLM请求（带脱敏）
@@ -478,10 +466,7 @@
 
       processingStep.value = stepDescriptions.COMPLETED;
       console.log("脱敏+LLM处理流程完成");
-      saveConversationHistory(
-        combinedPrompt,
-        desensitizeData.desensitizedContent,
-      );
+      saveConversationHistory();
     } catch (err) {
       console.error("处理过程中发生错误:", err);
       error.value = `处理失败: ${err.message}`;
@@ -816,9 +801,6 @@
       @export-pdf="exportPDF"
       @share-screenshot="shareScreenshot"
     />
-
-    <!-- 特性说明 -->
-    <LlmFeatureCards />
   </div>
 </template>
 
