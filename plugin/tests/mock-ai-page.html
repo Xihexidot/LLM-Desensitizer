@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Mock AI Chat (E2E)</title>
+</head>
+<body>
+  <!-- 模拟主流 AI 对话页面的最小 DOM：textarea + 发送按钮（同一功能容器内） -->
+  <div id="chatbox" style="max-width: 640px; margin: 24px auto; font-family: sans-serif">
+    <h3>模拟 AI 对话页面</h3>
+    <textarea id="prompt" rows="6" style="width: 100%" placeholder="输入消息"></textarea>
+    <br /><br />
+    <button id="send" type="button">发送</button>
+    <div id="sent" style="white-space: pre-wrap; margin-top: 12px; border-top: 1px dashed #ccc; padding-top: 8px"></div>
+  </div>
+  <script>
+    // 点击发送后，把当前输入框内容写入 #sent 供断言（验证插件脱敏后再放行）
+    document.getElementById("send").addEventListener("click", function () {
+      var v = document.getElementById("prompt").value;
+      document.getElementById("sent").textContent = "SENT: " + v;
+      document.getElementById("prompt").value = "";
+    });
+  </script>
+</body>
+</html>

@@ -16,6 +16,11 @@
     <properties>
         <java.version>21</java.version>
         <start-class>com.hdu.apisensitivities.ApiSensitivitiesApplication</start-class>
+        <!-- 安全扫描工具链版本 -->
+        <jacoco.version>0.8.13</jacoco.version>
+        <spotbugs.version>4.8.6.6</spotbugs.version>
+        <surefire.report.version>3.5.2</surefire.report.version>
+        <dependency.check.version>12.0.0</dependency.check.version>
     </properties>
     <dependencies>
         <dependency>
@@ -167,7 +172,87 @@
                     </excludes>
                 </configuration>
             </plugin>
+
+            <!-- 测试报告：Surefire 聚合报告（target/surefire-reports + site） -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-report-plugin</artifactId>
+                <version>${surefire.report.version}</version>
+            </plugin>
+
+            <!-- 代码覆盖率：JaCoCo，verify 阶段生成 target/site/jacoco -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>${jacoco.version}</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
+            <!-- 静态代码安全扫描：SpotBugs（不阻断构建，输出 XML/HTML 报告供复盘） -->
+            <plugin>
+                <groupId>com.github.spotbugs</groupId>
+                <artifactId>spotbugs-maven-plugin</artifactId>
+                <version>${spotbugs.version}</version>
+                <configuration>
+                    <effort>Max</effort>
+                    <threshold>Medium</threshold>
+                    <failOnError>false</failOnError>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>spotbugs-check</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <!-- 供应链漏洞扫描：OWASP Dependency-Check，独立 profile 避免日常构建受 NVD 网络依赖影响。
+         启用方式：mvn verify -Psecurity-scan -->
+    <profiles>
+        <profile>
+            <id>security-scan</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.owasp</groupId>
+                        <artifactId>dependency-check-maven</artifactId>
+                        <version>${dependency.check.version}</version>
+                        <configuration>
+                            <format>HTML</format>
+                            <failBuildOnCVSS>11</failBuildOnCVSS>
+                            <skipTestScope>true</skipTestScope>
+                            <assemblyAnalyzerEnabled>false</assemblyAnalyzerEnabled>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 
 </project>

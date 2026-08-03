@@ -1,0 +1,75 @@
+name: CI 构建 / 测试 / 安全扫描
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: 后端测试与安全扫描
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: 单元/集成测试（含攻防场景、合规性、动态漏洞专项）
+        run: mvn -B test
+
+      - name: 静态代码安全扫描（SpotBugs）+ 覆盖率（JaCoCo）
+        run: mvn -B verify
+
+      - name: 供应链漏洞扫描（OWASP Dependency-Check）
+        run: mvn -B verify -Psecurity-scan
+        continue-on-error: true # NVD 数据源波动不阻断主流程，结果以报告为准
+
+      - name: 上传后端测试与安全报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-reports
+          path: |
+            target/surefire-reports/
+            target/site/jacoco/
+            target/spotbugsXml.xml
+            target/dependency-check-report.html
+          retention-days: 30
+
+  plugin-e2e:
+    name: 浏览器插件全流程测试（Chromium + Edge）
+    runs-on: windows-latest # 预装 Microsoft Edge，验证主流浏览器版本适配
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: plugin/package-lock.json
+
+      - name: 安装依赖与 Chromium
+        working-directory: plugin
+        run: |
+          npm ci
+          npx playwright install chromium
+
+      - name: 企业策略存储模块单测 + 插件 E2E（功能/安全/兼容）
+        working-directory: plugin
+        run: |
+          npm run test:unit
+          npx playwright test --project=chromium
+          npx playwright test --project=msedge
+
+      - name: 上传插件 E2E 报告
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-reports
+          path: plugin/playwright-report/
+          retention-days: 30
