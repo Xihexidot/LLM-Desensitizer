@@ -79,17 +79,20 @@ public class MaskDesensitizationStrategy implements DesensitizationStrategy {
                     continue;
                 }
 
-                // 一致性占位符生成
-                String mask = contextRepository.getOrCreateConsistencyValue(sessionId, originalText, typeStr,
-                        currentId -> {
-                            // 如果是新出现的，通过自增出来的 currentId 动态拼接
-                            String template = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
-                            // 如果原本是 "[NAME]"，现在一致性升级为 "[NAME_1]"
-                            if (template.endsWith("]")) {
-                                return template.substring(0, template.length() - 1) + "_" + currentId + "]";
-                            }
-                            return template + "_" + currentId;
-                        });
+                // 一致性占位符生成（contextRepository 为 null 时（单元测试场景）跳过一致性，直接使用模板）
+                String mask;
+                if (contextRepository != null) {
+                    mask = contextRepository.getOrCreateConsistencyValue(sessionId, originalText, typeStr,
+                            currentId -> {
+                                String template = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
+                                if (template.endsWith("]")) {
+                                    return template.substring(0, template.length() - 1) + "_" + currentId + "]";
+                                }
+                                return template + "_" + currentId;
+                            });
+                } else {
+                    mask = MASK_TEMPLATES.getOrDefault(entity.getType(), "[MASKED]");
+                }
 
                 if (start <= end) {
                     result = result.substring(0, start) + mask + result.substring(end);

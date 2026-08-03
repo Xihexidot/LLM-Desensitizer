@@ -61,8 +61,14 @@ public class GeneralizationDesensitizationStrategy implements DesensitizationStr
                 String originalText = entity.getOriginalText();
                 String typeStr = entity.getType().name();
 
-                String replacement = contextRepository.getOrCreateConsistencyValue(sessionId, originalText, typeStr,
-                        currentId -> "[" + generalizeValue(originalText, entity.getType()) + "_" + currentId + "]");
+                // 一致性占位符生成（contextRepository 为 null 时（单元测试场景）跳过一致性，直接使用模板）
+                String replacement;
+                if (contextRepository != null) {
+                    replacement = contextRepository.getOrCreateConsistencyValue(sessionId, originalText, typeStr,
+                            currentId -> "[" + generalizeValue(originalText, entity.getType()) + "_" + currentId + "]");
+                } else {
+                    replacement = "[" + generalizeValue(originalText, entity.getType()) + "]";
+                }
 
                 int start = Math.max(0, entity.getStart());
                 int end = Math.min(text.length(), entity.getEnd());

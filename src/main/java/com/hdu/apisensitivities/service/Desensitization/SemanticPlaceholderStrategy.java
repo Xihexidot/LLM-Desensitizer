@@ -5,6 +5,7 @@ import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.utils.CollectionTypeUtils;
 import org.springframework.stereotype.Component;
 import java.util.*;
+import java.util.stream.Collectors;
 
 @Component("semanticPlaceholderStrategy")
 public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
@@ -14,7 +15,13 @@ public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
 
     @Override
     public String desensitize(String text, List<SensitiveEntity> sensitiveEntities) {
-        return "";
+        // 语义占位符策略面向字符串实体：将 SensitiveEntity 统一转为名称列表后委托给
+        // varargs 实现，确保任何分支（含空列表 / null）都会清空映射表，防止跨请求残留。
+        List<String> names = sensitiveEntities == null ? null
+                : sensitiveEntities.stream()
+                        .map(SensitiveEntity::getContent)
+                        .collect(Collectors.toList());
+        return desensitize(text, names);
     }
 
     @Override
@@ -50,6 +57,12 @@ public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
     }
 
     public String desensitize(String text, Object... args) {
+        // 🔒 安全修复：无条件先清空上一请求的映射表。
+        // 若不清空，在 LLM 调用异常中断、实体列表为 null、参数非法等提前返回分支下，
+        // ThreadLocal 中残留的映射会泄漏给同一线程的下一个请求（跨请求敏感数据泄露）。
+        Map<String, String> currentMap = mappingTable.get();
+        currentMap.clear();
+
         if (text == null || args.length == 0 || !(args[0] instanceof List)) {
             return text;
         }
@@ -63,8 +76,6 @@ public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
         entities.sort((a, b) -> Integer.compare(b.length(), a.length()));
 
         String maskedText = text;
-        Map<String, String> currentMap = mappingTable.get();
-        currentMap.clear();
 
         int index = 1;
         for (String entity : entities) {

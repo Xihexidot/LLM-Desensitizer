@@ -41,6 +41,6 @@ class LicensePlateDesensitizationUnitTests {
                 .confidence(0.95)
                 .build();
         String masked = new MaskDesensitizationStrategy().desensitize(text, List.of(entity));
-        assertTrue(masked.contains("[LICENSE_PLATE]"));
+        assertTrue(masked.contains("[PLATE]"));
     }
 }

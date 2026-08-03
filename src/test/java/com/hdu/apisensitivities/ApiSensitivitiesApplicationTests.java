@@ -29,7 +29,8 @@ class ApiSensitivitiesApplicationTests {
     void detectIpv4Address() {
         String text = "登录失败，来源IP为 192.168.10.25，请检查";
         var entities = detectionService.detectSensitiveInfo(text, "zh");
-        assertTrue(entities.stream().anyMatch(e -> e.getType() == SensitiveType.IP_ADDRESS && "192.168.10.25".equals(e.getOriginalText())));
+        assertTrue(entities.stream()
+                .anyMatch(e -> e.getType() == SensitiveType.IP_ADDRESS && "192.168.10.25".equals(e.getOriginalText())));
     }
 
     @Test
@@ -50,7 +51,7 @@ class ApiSensitivitiesApplicationTests {
                 .build();
         DesensitizationResponse resp = desensitizationManager.process(req);
         assertNotNull(resp.getDesensitizedContent());
-        assertTrue(resp.getDesensitizedContent().contains("[IP]"));
+        assertTrue(resp.getDesensitizedContent().matches(".*\\[IP(_\\d+)?\\].*"));
     }
 
     @Test
@@ -64,7 +65,7 @@ class ApiSensitivitiesApplicationTests {
                 .build();
         DesensitizationResponse resp = desensitizationManager.process(req);
         assertNotNull(resp.getDesensitizedContent());
-        assertTrue(resp.getDesensitizedContent().contains("10.0.*.*"));
+        assertTrue(resp.getDesensitizedContent().matches(".*10\\.0\\.\\*\\.\\*.*"));
     }
 
 }

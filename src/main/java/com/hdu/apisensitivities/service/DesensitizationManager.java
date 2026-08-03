@@ -1,12 +1,14 @@
 package com.hdu.apisensitivities.service;
 
 import com.hdu.apisensitivities.service.DataParser.DataParserManager;
+import com.hdu.apisensitivities.config.DesensitizationRuleProperties;
 import com.hdu.apisensitivities.entity.DesensitizationRequest;
 import com.hdu.apisensitivities.entity.DesensitizationResponse;
 import com.hdu.apisensitivities.entity.SensitiveEntity;
 import com.hdu.apisensitivities.entity.SensitiveType;
 import com.hdu.apisensitivities.service.ScenarioPerception.ScenarioAnalysisResult;
 import com.hdu.apisensitivities.service.Desensitization.DesensitizationStrategy;
+import com.hdu.apisensitivities.service.Desensitization.DesensitizationVerifier;
 import com.hdu.apisensitivities.service.Desensitization.DesensitizeRequestContext;
 import com.hdu.apisensitivities.service.SensitiveDetection.TextSensitiveDetectionService;
 
@@ -35,10 +37,13 @@ import java.util.stream.Collectors;
 @Service
 public class DesensitizationManager {
     private static final String DEFAULT_TEXT_STRATEGY_NAME = "maskDesensitizationStrategy";
+    private static final String GRADED_STRATEGY_NAME = "gradedDesensitizationStrategy";
 
     private final TextSensitiveDetectionService detectionService;
     private final List<DesensitizationStrategy> strategies;
     private final DataParserManager dataParserManager;
+    private final DesensitizationRuleProperties ruleProperties;
+    private final DesensitizationVerifier verifier;
 
     /**
      * 构造脱敏管理器实例。
@@ -46,13 +51,19 @@ public class DesensitizationManager {
      * @param detectionService  敏感信息检测服务，用于识别文本中的敏感实体
      * @param strategies        所有可用的脱敏策略实现，将根据上下文自动选择
      * @param dataParserManager 数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
+     * @param ruleProperties    脱敏规则动态配置（分级开关、类型级别、校验开关等）
+     * @param verifier          脱敏结果双重校验器（算法二次扫描 + 人工复核队列）
      */
     public DesensitizationManager(TextSensitiveDetectionService detectionService,
             List<DesensitizationStrategy> strategies,
-            DataParserManager dataParserManager) {
+            DataParserManager dataParserManager,
+            DesensitizationRuleProperties ruleProperties,
+            DesensitizationVerifier verifier) {
         this.detectionService = detectionService;
         this.strategies = strategies;
         this.dataParserManager = dataParserManager;
+        this.ruleProperties = ruleProperties;
+        this.verifier = verifier;
     }
 
     /**
@@ -91,7 +102,21 @@ public class DesensitizationManager {
 
             List<SensitiveEntity> entities = detectSensitiveEntities(request, scenarioResult);
             DesensitizationResult result = applyDesensitization(request, entities);
-            return buildSuccessResponse(result, entities);
+
+            // 双重校验：算法二次扫描 + 人工复核队列（规则可动态开关）
+            DesensitizationVerifier.VerificationResult verification = verifier.verify(
+                    request.getContent(),
+                    result.getDesensitizedContent(),
+                    entities,
+                    request.getLanguage());
+            if (verification.isEnabled() && verification.needsManualReview()) {
+                log.warn("脱敏结果未通过算法校验，已进入人工复核队列：覆盖率={}, 明文残留={}, 二次扫描残留={}",
+                        String.format("%.2f", verification.getCoverage()),
+                        verification.getResidualTexts(),
+                        verification.getReDetectedTexts());
+            }
+
+            return buildSuccessResponse(result, entities, verification);
 
         } catch (Exception e) {
             log.error("脱敏处理失败", e);
@@ -113,40 +138,35 @@ public class DesensitizationManager {
         return dataParserManager.parseData(request);
     }
 
-    /**
-     * 非高敏类型（默认关闭，需显式开启）。
-     * 这些类型由 NLP 引擎检测，在企业场景下误报率高、对语义干扰大，
-     * 仅在国企/政府/合规要求严格的场景下按需开启。
-     */
-    private static final Set<String> LOW_PRIORITY_TYPES = Set.of(
-            SensitiveType.PERSON.name(),
-            SensitiveType.ADDRESS.name(),
-            SensitiveType.ORGANIZATION.name());
-
     private ScenarioAnalysisResult prepareDetectionScopeForCurrentMode(DesensitizationRequest request) {
         // 用户显式指定了检测类型 → 尊重用户选择
         if (request.getIncludeTypes() != null && !request.getIncludeTypes().isEmpty()) {
             return null;
         }
-        // 默认：检测所有类型，但排除 NLP 类高误报类型（人名/地址/机构）。
-        // 国企/政府场景可通过请求参数 includeTypes 显式加入。
-        Set<String> defaultTypes = new HashSet<>(Arrays.stream(SensitiveType.values())
+        // 默认：检测所有敏感类型（包括 NLP 检测的人名/地址/机构）。
+        // 置信度评分和实体合并机制会过滤低置信度匹配，无需在源头排除。
+        Set<String> allTypes = Arrays.stream(SensitiveType.values())
                 .map(Enum::name)
-                .filter(t -> !LOW_PRIORITY_TYPES.contains(t))
-                .collect(Collectors.toSet()));
-        request.setIncludeTypes(defaultTypes);
+                .collect(Collectors.toSet());
+        request.setIncludeTypes(allTypes);
         request.setStrictMode(false);
-        log.info("默认检测范围已设置（排除PERSON/ADDRESS/ORGANIZATION），可通过includeTypes参数自定义");
+        log.info("默认检测范围：所有敏感类型，共 {} 种", allTypes.size());
         return null;
     }
 
-    private DesensitizationResponse buildSuccessResponse(DesensitizationResult result, List<SensitiveEntity> entities) {
+    private DesensitizationResponse buildSuccessResponse(DesensitizationResult result, List<SensitiveEntity> entities,
+            DesensitizationVerifier.VerificationResult verification) {
+        String message = "脱敏处理成功";
+        if (verification.isEnabled() && verification.needsManualReview()) {
+            message = "脱敏处理成功（算法校验未通过，已进入人工复核队列，覆盖率 "
+                    + String.format("%.2f", verification.getCoverage()) + "）";
+        }
         return new DesensitizationResponse(
                 result.getOriginalContent(),
                 result.getDesensitizedContent(),
                 entities,
                 true,
-                "脱敏处理成功");
+                message);
     }
 
     private DesensitizationResponse buildFailedResponse(DesensitizationRequest request, String errorMessage) {
@@ -217,6 +237,17 @@ public class DesensitizationManager {
                     .findFirst();
             if (strategy.isPresent()) {
                 return strategy.get();
+            }
+        }
+
+        // 1.5 分级分类脱敏开关开启时，优先使用分级策略（HIGH→掩码 / MEDIUM→部分 / LOW→泛化）
+        if (ruleProperties.isGradedEnabled()) {
+            Optional<DesensitizationStrategy> graded = strategies.stream()
+                    .filter(s -> GRADED_STRATEGY_NAME.equals(s.getName()) &&
+                            (dataType == null || s.supportsDataType(dataType)))
+                    .findFirst();
+            if (graded.isPresent()) {
+                return graded.get();
             }
         }
 
@@ -292,6 +323,15 @@ public class DesensitizationManager {
             }
         }
 
+        // 凭据（密码/API Key）与低精度 NLP 片段（人名/机构/地址）重叠时，凭据必须优先，
+        // 防止密码被误判为姓名/机构而吞并，导致凭据部分明文泄露（真实攻防案例：提示注入载荷内嵌密码）
+        if (isCredentialType(candidate.getType()) && isLowPrecisionFragmentType(existing.getType())) {
+            return true;
+        }
+        if (isCredentialType(existing.getType()) && isLowPrecisionFragmentType(candidate.getType())) {
+            return false;
+        }
+
         int typeCmp = typeSpecificityScore(candidate.getType()) - typeSpecificityScore(existing.getType());
         if (typeCmp != 0) {
             return typeCmp > 0;
@@ -299,6 +339,13 @@ public class DesensitizationManager {
 
         int existingSpan = existing.getEnd() - existing.getStart();
         int candidateSpan = candidate.getEnd() - candidate.getStart();
+        // 数字标识型类型（身份证/银行卡/信用卡）重叠且起点相同时，保留更完整的匹配：
+        // 18 位身份证若被 17 位银行卡子串吞并，校验位 X 将明文残留（真实案例：11010119900307663X → [BANK_CARD]X）
+        if (isNumericIdentifierType(candidate.getType()) && isNumericIdentifierType(existing.getType())
+                && candidate.getStart() == existing.getStart() && candidateSpan != existingSpan) {
+            return candidateSpan > existingSpan;
+        }
+
         if (candidateSpan != existingSpan) {
             return candidateSpan < existingSpan;
         }
@@ -315,6 +362,23 @@ public class DesensitizationManager {
         return a.getType() == SensitiveType.ADDRESS
                 && a.getStart() <= b.getStart() && a.getEnd() >= b.getEnd()
                 && (b.getType() == SensitiveType.PERSON || b.getType() == SensitiveType.ORGANIZATION);
+    }
+
+    /** 凭据类敏感类型：脱敏优先级最高，任何低精度片段都不得吞并 */
+    private boolean isCredentialType(SensitiveType type) {
+        return type == SensitiveType.PASSWORD || type == SensitiveType.API_KEY;
+    }
+
+    /** 数字标识型类型：重叠时需按完整匹配（span 更长）择优，防止子串吞并导致末位残留 */
+    private boolean isNumericIdentifierType(SensitiveType type) {
+        return type == SensitiveType.ID_CARD || type == SensitiveType.BANK_CARD
+                || type == SensitiveType.CREDIT_CARD;
+    }
+
+    /** 低精度 NLP 片段类型：识别置信度低、容易误报，与凭据重叠时应让位 */
+    private boolean isLowPrecisionFragmentType(SensitiveType type) {
+        return type == SensitiveType.PERSON || type == SensitiveType.ORGANIZATION
+                || type == SensitiveType.NAME || type == SensitiveType.ADDRESS;
     }
 
     private int typeSpecificityScore(SensitiveType type) {

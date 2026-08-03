@@ -30,6 +30,7 @@ public class NlpEntityDetector {
      */
     private static volatile Set<String> surnameWhitelist = initSurnameWhitelist();
     private static volatile Set<String> personBlacklist = initPersonBlacklist();
+    private static volatile Set<String> honorificSuffixes = initHonorificSuffixes();
     private static volatile Set<String> addressBlacklistLabels = initAddressBlacklistLabels();
     private static volatile Set<String> addressBlacklistPrefixChars = initAddressBlacklistPrefixChars();
     private static volatile Set<String> addressSuffixes = initAddressSuffixes();
@@ -81,14 +82,36 @@ public class NlpEntityDetector {
     private static Set<String> initPersonBlacklist() {
         Set<String> set = new HashSet<>();
         String[] words = {
+                // 已有误报词（姓氏开头的普通词）
                 "纸张", "张望", "张罗", "张力", "张开", "张狂",
                 "马虎", "马上", "马力", "马匹", "马桶", "马虎眼",
                 "王国", "王牌", "王法", "王位", "王冠", "王权",
                 "李子", "李树", "周围", "周年", "周期", "韩国",
-                "唐朝", "宋朝", "秦汉", "魏晋", "元朝", "郑重", "张扬"
+                "唐朝", "宋朝", "秦汉", "魏晋", "元朝", "郑重", "张扬",
+                // 真实业务场景中高频误报的普通词（以常见姓氏开头，词性为名词/动词）
+                "查询", "余额", "关联", "验证码", "手机号", "银行卡", "信用卡",
+                "密码", "口令", "验证", "联系", "检索", "查看", "登录", "注册",
+                "支付", "转账", "管理", "确认", "操作", "办理", "开通", "注销",
+                "挂失", "修改", "重置", "恢复", "申请", "服务", "系统", "账户",
+                "款项", "订单", "记录", "明细", "流水", "金额", "状态", "凭证"
         };
         for (String w : words) {
             set.add(w);
+        }
+        return set;
+    }
+
+    /** 称谓/问候后缀：人名实体以这些词结尾时应截断（如"张先生"→"张"丢弃、"张三您好"→"张三"保留） */
+    private static Set<String> initHonorificSuffixes() {
+        Set<String> set = new HashSet<>();
+        String[] suffixes = {
+                "先生", "女士", "小姐", "您好", "你好", "老师", "同学", "同志",
+                "经理", "主任", "处长", "局长", "总监", "老板", "师傅", "大哥",
+                "大姐", "大爷", "大妈", "主管", "秘书", "总裁", "董事长", "总经理",
+                "教授", "医生", "行长", "部长", "科长", "处长"
+        };
+        for (String s : suffixes) {
+            set.add(s);
         }
         return set;
     }
@@ -99,7 +122,9 @@ public class NlpEntityDetector {
                 "身份证号", "银行卡号", "信用卡号", "账号", "编号", "流水号",
                 "订单号", "学号", "工号", "座号", "序号", "型号", "牌号",
                 "证号", "卡号", "票号", "单号", "档号", "快递号", "运单号",
-                "挂号", "代号"
+                "挂号", "代号",
+                // 对话场景高频 PII 标签词（避免"请确认手机号""验证码"被误判为地址）
+                "手机号", "验证码", "密码", "口令", "余额", "金额", "账户", "卡密"
         };
         for (String l : labels) {
             set.add(l);
@@ -236,7 +261,8 @@ public class NlpEntityDetector {
 
             SensitiveType type = getTypeByNature(term.nature.toString(), word);
             if (type == null) {
-                if (isPotentialPersonName(word)) {
+                if (isPersonNameCompatibleNature(term.nature.toString())
+                        && isPotentialPersonName(word) && !personBlacklist.contains(word)) {
                     type = SensitiveType.PERSON;
                 } else if (isPotentialAddress(word)) {
                     type = SensitiveType.ADDRESS;
@@ -246,17 +272,24 @@ public class NlpEntityDetector {
                 continue;
             }
 
+            // 人名实体截断称谓/问候后缀（"张先生"→仅剩"张"则丢弃；"张三您好"→"张三"保留）
+            String entityWord = type == SensitiveType.PERSON ? trimHonorific(word) : word;
+            if (entityWord.length() < 2) {
+                continue;
+            }
+
             // 在原文中搜索该词的所有出现位置（不依赖累计游标）
             int fromIndex = 0;
             while ((fromIndex = text.indexOf(word, fromIndex)) >= 0) {
-                String key = type.name() + ":" + fromIndex + ":" + (fromIndex + word.length());
+                int end = fromIndex + entityWord.length();
+                String key = type.name() + ":" + fromIndex + ":" + end;
                 if (seen.add(key)) {
                     entities.add(SensitiveEntity.builder()
                             .type(type)
-                            .originalText(word)
+                            .originalText(entityWord)
                             .start(fromIndex)
-                            .end(fromIndex + word.length())
-                            .confidence(adjustConfidence(type, word))
+                            .end(end)
+                            .confidence(adjustConfidence(type, entityWord))
                             .build());
                 }
                 fromIndex += word.length();
@@ -283,13 +316,53 @@ public class NlpEntityDetector {
                 return SensitiveType.PERSON;
             case "ns":
             case "nsf":
-            case "nz":
                 return SensitiveType.ADDRESS;
             case "nt":
                 return SensitiveType.ORGANIZATION;
             default:
                 return null;
         }
+    }
+
+    /**
+     * 词性兼容性判断：仅当 HanLP 词性不明确排除人名的可能性时，才允许"姓氏+中文"启发式。
+     * <p>
+     * 排除动词（查询/关联）、形容词、副词、虚词、数词、量词、专名（nz，如"银行卡""验证码"）
+     * 等明确非人名词性，避免"查询"（v）、"关联"（vn）、"余额"（n，靠黑名单兜底）被误判为人名。
+     * </p>
+     */
+    private static boolean isPersonNameCompatibleNature(String nature) {
+        if (nature == null || nature.isEmpty()) {
+            return true;
+        }
+        char first = nature.charAt(0);
+        // 动词 v* / 形容词 a* / 副词 d / 代词 r / 介词 p / 连词 c / 助词 u* / 数词 m* / 量词 q* /
+        // 叹词 e / 拟声 o / 语气 y / 前缀 h / 后缀 k / 语素 g / 标点 w / 时间 t / 方位 f /
+        // 区别词 b / 状态词 z / 成语 i / 习用语 l / 简称 j / 其他专名 nz
+        return switch (first) {
+            case 'v', 'a', 'd', 'r', 'p', 'c', 'u', 'm', 'q', 'e', 'o', 'y',
+                    'h', 'k', 'g', 'w', 't', 'f', 'b', 'z', 'i', 'j', 'l' ->
+                false;
+            default -> true;
+        };
+    }
+
+    /**
+     * 截断人名实体的称谓/问候后缀。
+     * <p>
+     * 如"张先生"→"张"、"张三您好"→"张三"。返回原串（未截断）供调用方判断长度是否合法。
+     * </p>
+     */
+    private static String trimHonorific(String word) {
+        if (word == null) {
+            return "";
+        }
+        for (String suffix : honorificSuffixes) {
+            if (word.length() > suffix.length() && word.endsWith(suffix)) {
+                return word.substring(0, word.length() - suffix.length());
+            }
+        }
+        return word;
     }
 
     private static boolean isPotentialPersonName(String word) {
@@ -354,6 +427,18 @@ public class NlpEntityDetector {
             if (type == SensitiveType.PERSON && personBlacklist.contains(trimmed)) {
                 continue;
             }
+            // PERSON 回退匹配：截断称谓/问候后缀（"张三您好"→"张三"；仅剩"张"则丢弃）
+            if (type == SensitiveType.PERSON) {
+                String trimmedHonor = trimHonorific(trimmed);
+                if (trimmedHonor.length() < 2) {
+                    continue;
+                }
+                if (trimmedHonor.length() != trimmed.length()) {
+                    end = start + trimmedHonor.length();
+                    trimmed = trimmedHonor;
+                    key = type.name() + ":" + start + ":" + end;
+                }
+            }
             entities.add(SensitiveEntity.builder()
                     .type(type)
                     .originalText(trimmed)
@@ -372,9 +457,11 @@ public class NlpEntityDetector {
         if (word == null || word.length() < 2) {
             return false;
         }
-        // 精确黑名单匹配
-        if (addressBlacklistLabels.contains(word)) {
-            return true;
+        // 子串黑名单匹配：覆盖"请确认手机号""银行卡号"等含标签词的组合表达
+        for (String label : addressBlacklistLabels) {
+            if (word.contains(label)) {
+                return true;
+            }
         }
         // 以"号"结尾时，检查倒数第二个字是否为非地址关键词（证、卡、账、编 等）
         if (word.endsWith("号") && word.length() >= 2) {
