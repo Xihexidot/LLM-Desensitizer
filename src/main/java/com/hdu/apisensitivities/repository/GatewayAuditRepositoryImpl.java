@@ -3,6 +3,7 @@ package com.hdu.apisensitivities.repository;
 import com.hdu.apisensitivities.entity.gateway.GatewayAuditEvent;
 import com.hdu.apisensitivities.entity.gateway.GatewayDecisionAction;
 import com.hdu.apisensitivities.entity.gateway.GatewayRiskLevel;
+import com.hdu.apisensitivities.utils.ContentCipher;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
@@ -51,8 +52,8 @@ public class GatewayAuditRepositoryImpl implements GatewayAuditRepository {
                                 event.getInputRiskLevel() != null ? event.getInputRiskLevel().name() : null,
                                 event.getOutputRiskLevel() != null ? event.getOutputRiskLevel().name() : null,
                                 null, // userAction 初始为空
-                                event.getOriginalContent(),
-                                event.getProcessedContent(),
+                                ContentCipher.encrypt(event.getOriginalContent()),
+                                ContentCipher.encrypt(event.getProcessedContent()),
                                 event.getRequestHash(),
                                 event.getResponseHash());
         }
@@ -183,8 +184,10 @@ public class GatewayAuditRepositoryImpl implements GatewayAuditRepository {
                                         .inputRiskLevel(irl != null ? GatewayRiskLevel.valueOf(irl) : null)
                                         .outputRiskLevel(orl != null ? GatewayRiskLevel.valueOf(orl) : null)
                                         .userAction(rs.getString("user_action"))
-                                        .originalContent(rs.getString("original_content"))
-                                        .processedContent(rs.getString("processed_content"))
+                                        .originalContent(ContentCipher.decrypt(rs.getString("original_content")))
+                                        .processedContent(ContentCipher.decrypt(rs.getString("processed_content")))
+                                        .requestHash(rs.getString("request_hash"))
+                                        .responseHash(rs.getString("response_hash"))
                                         .build();
                 }
         }

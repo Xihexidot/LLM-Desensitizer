@@ -9,3 +9,9 @@ out/
 tmp
 logs
 node_modules/
+.m2repo/
+
+# 浏览器插件测试产物
+plugin/.browsers/
+plugin/debug.log
+plugin/tests/last-run*.log

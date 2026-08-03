@@ -29,7 +29,6 @@ public class QdrantConfig {
         return new QdrantClient(
                 QdrantGrpcClient.newBuilder(host, port, true)
                         .withApiKey(apiKey)
-                        .build()
-        );
+                        .build());
     }
 }

@@ -279,7 +279,7 @@ public class LlmProxyService {
     }
 
     private void auditMaskedPromptIfNeeded(List<String> aiEntities, String maskedPrompt) {
-        if (aiEntities.isEmpty()) {
+        if (aiEntities == null || aiEntities.isEmpty()) {
             return;
         }
 
@@ -294,7 +294,8 @@ public class LlmProxyService {
         return semanticPlaceholderStrategy.restore(llmRawResponse);
     }
 
-    private List<SensitiveEntity> mergeInputEntities(DesensitizationResponse baseDesensitized, List<String> aiEntities) {
+    private List<SensitiveEntity> mergeInputEntities(DesensitizationResponse baseDesensitized,
+            List<String> aiEntities) {
         List<SensitiveEntity> allEntities = new ArrayList<>(baseDesensitized.getDetectedEntities());
         allEntities.addAll(convertToSensitiveEntities(aiEntities));
         return allEntities;

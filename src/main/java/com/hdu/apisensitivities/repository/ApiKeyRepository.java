@@ -25,7 +25,8 @@ public class ApiKeyRepository {
         log.info("已初始化测试 API Key，请妥善保管: {}", defaultKey.substring(0, Math.min(defaultKey.length(), 20)) + "...");
     }
 
-    public ApiKey saveApiKey(String id, String plainKey, String name, String tenantId, String userId, String department) {
+    public ApiKey saveApiKey(String id, String plainKey, String name, String tenantId, String userId,
+            String department) {
         String keyPrefix = extractPrefix(plainKey);
         String hashedKey = hashKey(plainKey);
         ApiKey apiKey = ApiKey.builder()
@@ -49,8 +50,10 @@ public class ApiKeyRepository {
         }
         String prefix = extractPrefix(plainKey);
         ApiKey stored = keyStore.get(prefix);
-        if (stored == null) return Optional.empty();
-        if (!stored.isEnabled()) return Optional.empty();
+        if (stored == null)
+            return Optional.empty();
+        if (!stored.isEnabled())
+            return Optional.empty();
         if (stored.getExpiresAt() != null && Instant.now().isAfter(stored.getExpiresAt())) {
             log.warn("API Key {} 已过期", stored.getName());
             return Optional.empty();
@@ -83,7 +86,8 @@ public class ApiKeyRepository {
             StringBuilder hexString = new StringBuilder();
             for (byte b : hash) {
                 String hex = Integer.toHexString(0xff & b);
-                if (hex.length() == 1) hexString.append('0');
+                if (hex.length() == 1)
+                    hexString.append('0');
                 hexString.append(hex);
             }
             return hexString.toString();
