@@ -16,9 +16,11 @@ import java.util.Objects;
 public class WebConfig implements WebMvcConfigurer {
 
     private final HandlerInterceptor apiInterceptor;
+    private final HandlerInterceptor monitorAuthInterceptor;
 
-    public WebConfig(Interceptor apiInterceptor) {
+    public WebConfig(Interceptor apiInterceptor, MonitorAuthInterceptor monitorAuthInterceptor) {
         this.apiInterceptor = apiInterceptor;
+        this.monitorAuthInterceptor = monitorAuthInterceptor;
     }
 
     // 2. 合并为一个拦截器配置方法，整合了所有需要排除的路径
@@ -32,6 +34,9 @@ public class WebConfig implements WebMvcConfigurer {
                         "/swagger-ui/**",
                         "/v3/api-docs/**"
                 );
+        // 调用监控模块：仅允许安全审计/运维管理角色访问
+        registry.addInterceptor(monitorAuthInterceptor)
+                .addPathPatterns("/gateway/v1/monitor/**");
     }
 
     // 3. 跨域配置保持不变
