@@ -1,0 +1,48 @@
+Windows Registry Editor Version 5.00
+
+; =============================================================
+; AI 输入安全助手 - 企业策略推送模板（Windows GPO / 注册表）
+; =============================================================
+; 用途：企业 IT 管理员通过组策略将员工工号、部门等固定业务属性推送到
+;       chrome.storage.managed（只读，员工端不可篡改）。
+; 使用前必须将 {EXTENSION_ID} 替换为实际扩展 ID：
+;   chrome://extensions → 开启"开发者模式" → 复制插件卡片上的 ID。
+;
+; 推送方式 A：直接导入本注册表（临时验证用，需要管理员权限）
+;   双击导入或运行：reg import plugin\policy\windows-gpo.reg
+;
+; 推送方式 B（正式）：通过 AD 组策略 GPO 发布
+;   计算机配置 → 管理模板 → 添加 Chrome ADMX 模板后，
+;   将上述"策略值"逐项填入：
+;   Google Chrome → 扩展程序 → Configure the list of force-installed
+;   扩展策略（ExtensionSettings / 3rdparty 注册表结构与此文件一致）。
+;
+; 防篡改说明：HKLM\SOFTWARE\Policies 仅系统管理员可写，
+; 普通员工（Users 组）无写权限 → 员工端无法修改这些值。
+; =============================================================
+
+; ---- Chrome（注册表路径）----
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\{EXTENSION_ID}\policy]
+"userId"="E100123"
+"department"="研发部"
+"companyName"="XX科技有限公司"
+"gatewayUrl"="http://127.0.0.1:8080"
+"complianceMode"="STRICT"
+
+; ---- Microsoft Edge（同为 Chromium 内核，路径不同）----
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{EXTENSION_ID}\policy]
+"userId"="E100123"
+"department"="研发部"
+"companyName"="XX科技有限公司"
+"gatewayUrl"="http://127.0.0.1:8080"
+"complianceMode"="STRICT"
+
+; =============================================================
+; 验证步骤：
+;   1. 浏览器地址栏输入 chrome://policy（Edge 为 edge://policy）
+;   2. 点击"重新加载策略"按钮
+;   3. 展开扩展策略节点，确认上述 5 个键已出现且 Status = OK
+;   4. 打开插件控制台（Service Worker），应看到：
+;      [AI-Guard ManagedStore] 命中企业策略推送: userId,department,...
+;      [AI-Guard BG] getManagedContext: source= managed keys= ...
+; =============================================================

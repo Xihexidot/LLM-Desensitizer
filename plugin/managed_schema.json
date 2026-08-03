@@ -1,0 +1,32 @@
+{
+  "type": "object",
+  "description": "AI 输入安全助手 — 企业策略推送 Schema。由企业 IT 通过 Windows GPO / Mac MDM / Linux policies 推送，扩展侧只读，员工端不可篡改。",
+  "properties": {
+    "userId": {
+      "type": "string",
+      "title": "员工工号",
+      "description": "企业 IT 推送的员工工号，用于网关侧身份绑定与审计。员工端只读，无法修改。"
+    },
+    "department": {
+      "type": "string",
+      "title": "所属部门",
+      "description": "员工所属部门，用于审计与分级管控。"
+    },
+    "companyName": {
+      "type": "string",
+      "title": "公司名称",
+      "description": "所属企业名称，用于合规声明与日志归属。"
+    },
+    "gatewayUrl": {
+      "type": "string",
+      "title": "默认安全网关地址",
+      "description": "企业指定的脱敏网关地址，管理员统一下发后员工无需自行填写，避免员工指向非受控网关。"
+    },
+    "complianceMode": {
+      "type": "string",
+      "title": "合规模式",
+      "enum": ["STRICT", "RELAXED"],
+      "description": "STRICT=强制脱敏，检测到敏感信息必须脱敏后才能发送；RELAXED=允许员工选择发送原文。"
+    }
+  }
+}

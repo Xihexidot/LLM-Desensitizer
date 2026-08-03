@@ -4,6 +4,9 @@ const STORAGE_KEY_USER_ID = "ai-guard-user-id";
 const STORAGE_KEY_USER_NAME = "ai-guard-user-name";
 const STORAGE_KEY_DEPT = "ai-guard-dept";
 
+importScripts("managed-store.js");
+
+// 加上 [AI-Guard BG] 前缀
 function log(...args) {
   console.log("[AI-Guard BG]", ...args);
 }
@@ -99,6 +102,7 @@ async function getBaseUrl() {
 async function reviewInput(payload) {
   const userId = await getUserId();
   const department = await getDept();
+  const managedCtx = await getManagedContext();
   const baseUrl = await getBaseUrl();
   const requestBody = {
     content: payload?.content ?? "",
@@ -106,6 +110,8 @@ async function reviewInput(payload) {
     language: payload?.language ?? "zh",
     userId: payload?.userId ?? userId,
     department: payload?.department ?? department,
+    companyName: managedCtx.companyName ?? "",
+    complianceMode: managedCtx.complianceMode ?? "RELAXED",
     targetProvider: payload?.targetProvider ?? "",
     strictMode: false,
     autoScenarioDetection: false,
@@ -116,6 +122,10 @@ async function reviewInput(payload) {
     baseUrl + "/plugin/audit-check",
     "userId=",
     requestBody.userId,
+    "company=",
+    requestBody.companyName,
+    "mode=",
+    requestBody.complianceMode,
     "targetProvider=",
     requestBody.targetProvider,
     "contentLen=",
@@ -160,18 +170,29 @@ async function reviewInput(payload) {
 }
 
 // ========== 用户身份管理（Manifest V3 → chrome.storage）==========
-// 优先级：企业 MDM/Group Policy 推送 > 员工手动填写 > 自动生成 ID
-// chrome.storage.managed 由 IT 管理员通过 Windows GPO / Mac MDM / Linux policies 推送，只读，用户无权修改。
+// 优先级：企业 MDM/Group Policy 推送(chrome.storage.managed，只读) > 员工手动填写 > 自动生成 ID
+// 企业推送的键名必须与 managed_schema.json 保持一致（userId/department/companyName/gatewayUrl/complianceMode）
+
+async function getManagedContext() {
+  try {
+    const { source, profile } = await ManagedStore.getManagedProfile();
+    log(
+      "getManagedContext: source=",
+      source,
+      "keys=",
+      profile ? Object.keys(profile) : "none",
+    );
+    return profile || {};
+  } catch {
+    return {};
+  }
+}
 
 async function getUserId() {
   try {
-    // 1) 企业 MDM 推送（只读，用户改不了）
-    try {
-      const managed = await chrome.storage.managed.get("userId");
-      if (managed.userId) return managed.userId;
-    } catch (_) {
-      /* managed storage 在非企业环境不可用 */
-    }
+    // 1) 企业 MDM/GPO 推送（只读，用户改不了）
+    const managed = await getManagedContext();
+    if (managed.userId) return managed.userId;
 
     // 2) 员工在配置面板填写的姓名/工号
     const nameResult = await chrome.storage.local.get(STORAGE_KEY_USER_NAME);
@@ -192,12 +213,8 @@ async function getUserId() {
 async function getDept() {
   try {
     // 1) 企业 MDM 推送
-    try {
-      const managed = await chrome.storage.managed.get("department");
-      if (managed.department) return managed.department;
-    } catch (_) {
-      /* 非企业环境 */
-    }
+    const managed = await getManagedContext();
+    if (managed.department) return managed.department;
 
     // 2) 员工手动填写
     const result = await chrome.storage.local.get(STORAGE_KEY_DEPT);

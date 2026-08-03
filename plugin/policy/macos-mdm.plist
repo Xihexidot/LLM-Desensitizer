@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  AI 输入安全助手 - 企业策略推送模板（Mac MDM）
+  ============================================================
+  用途：企业 IT 通过 MDM（Jamf / Intune / Kandji / Workspace ONE 等）
+       下发此描述文件，将员工工号、部门等属性推送到
+       chrome.storage.managed（只读，员工端不可篡改）。
+  使用前将 {EXTENSION_ID} 替换为实际扩展 ID。
+
+  注意：MDM 描述文件需使用  PayloadType = com.apple.ManagedClient.preferences，
+       且必须设置 Data 字段（base64 编码的 .plist）。此处为便于阅读
+       提供"未编码"的配置内容，打包 MDM 时需转换为 Data。
+-->
+<plist version="1.0">
+<dict>
+  <key>PayloadType</key>
+  <string>com.apple.ManagedClient.preferences</string>
+  <key>PayloadIdentifier</key>
+  <string>com.example.ai-guard.policy</string>
+  <key>PayloadUUID</key>
+  <string>AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE</string>
+  <key>PayloadVersion</key>
+  <integer>1</integer>
+  <key>PayloadContent</key>
+  <array>
+    <dict>
+      <key>PayloadType</key>
+      <string>com.apple.ManagedClient.preferences</string>
+      <key>PayloadIdentifier</key>
+      <string>com.example.ai-guard.policy.preference</string>
+      <key>PayloadUUID</key>
+      <string>FFFFFFFF-1111-2222-3333-444444444444</string>
+      <key>PayloadVersion</key>
+      <integer>1</integer>
+      <key>PayloadDisplayName</key>
+      <string>AI 输入安全助手 企业策略</string>
+      <key>com.google.Chrome.extensions.{EXTENSION_ID}</key>
+      <dict>
+        <key>userId</key>
+        <string>E100123</string>
+        <key>department</key>
+        <string>研发部</string>
+        <key>companyName</key>
+        <string>XX科技有限公司</string>
+        <key>gatewayUrl</key>
+        <string>http://127.0.0.1:8080</string>
+        <key>complianceMode</key>
+        <string>STRICT</string>
+      </dict>
+    </dict>
+  </array>
+</dict>
+</plist>

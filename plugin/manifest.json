@@ -6,6 +6,9 @@
   "permissions": [
     "storage"
   ],
+  "storage": {
+    "managed_schema": "managed_schema.json"
+  },
   "action": {
     "default_title": "AI 输入安全助手",
     "default_popup": "config.html"
@@ -37,7 +40,9 @@
         "https://www.doubao.com/*",
         "https://yuanbao.tencent.com/*",
         "https://claude.ai/*",
-        "https://www.perplexity.ai/*"
+        "https://www.perplexity.ai/*",
+        "http://127.0.0.1:*/*",
+        "http://localhost:*/*"
       ],
       "js": [
         "popup.js",
