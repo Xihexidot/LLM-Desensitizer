@@ -1,5 +1,5 @@
 <script setup>
-  import { ref, reactive, onMounted, watch, onUnmounted } from "vue";
+  import { ref, reactive, computed, onMounted, watch, onUnmounted } from "vue";
   import { API_BASE_URL } from "../config";
   import LlmProcessingProgress from "./LlmProcessingProgress.vue";
   import LlmDetectionResults from "./LlmDetectionResults.vue";
@@ -10,6 +10,7 @@
     exportElementToPdf,
     copyElementScreenshotOrDownload,
   } from "../utils/llmReportExport";
+  import { decodeText, buildMaskMapping } from "../utils/desensitizeDecoder";
 
   const props = defineProps({
     scenarioSettings: {
@@ -265,6 +266,11 @@
   const collapsedDetection = ref(false);
   const resultsPanelRef = ref(null);
 
+  // 脱敏解码：会话内"脱敏标记 → 原始明文"映射（来自后端缓存反向导出，缺失时前端兜底重建）
+  const maskMapping = ref({});
+  // 展示模式：true = 解码还原后的原始数据；false = 查看 AI 返回的脱敏原始文本
+  const showDecoded = ref(true);
+
   const currentPercent = ref(0);
   let rafId = null;
   let startTime = 0;
@@ -364,7 +370,7 @@
   }
 
   function saveConversationHistory(originalPrompt, desensitizedPrompt) {
-    const text = getLlmText();
+    const text = getDecodedLlmText();
     startTypewriter(text);
   }
 
@@ -411,6 +417,9 @@
             content: combinedPrompt,
             strategy: mapStrategyToBackend(desensitizationStrategy.value),
             language: "zh",
+            // 贯通会话ID：与后续 /api/llm/proxy 共用同一会话，
+            // 后端 GlobalSessionContextRepository 才能按此会话导出脱敏标记 → 明文映射
+            sessionId: formData.sessionId,
             autoScenarioDetection: props.scenarioSettings.autoScenario,
             manualScenarioType: manualScenarioType.value || undefined,
             metadata: {
@@ -426,6 +435,17 @@
 
       const desensitizeData = await desensitizeResponse.json();
       detectedEntities.value = desensitizeData.detectedEntities || [];
+
+      // 构建"脱敏标记 → 原始明文"映射：优先使用后端会话缓存反向导出的 maskMapping，
+      // 后端未返回时由前端基于脱敏文本与实体列表兜底重建，确保 AI 返回可完整解码还原
+      maskMapping.value =
+        desensitizeData.maskMapping &&
+        Object.keys(desensitizeData.maskMapping).length > 0
+          ? desensitizeData.maskMapping
+          : buildMaskMapping(
+              desensitizeData.desensitizedContent,
+              detectedEntities.value,
+            );
 
       // 第二步：调用LLM服务
       processingStep.value = stepDescriptions.CALLING_LLM;
@@ -450,6 +470,12 @@
       }
 
       const llmData = await llmResponse.json();
+
+      // 合并 AI 链路返回的脱敏标记映射（[ENTITY_N] → 语义实体、[TYPE_N] → 明文），
+      // 与前端脱敏映射合并后统一用于解码还原 AI 答复内容
+      if (llmData.maskMapping && Object.keys(llmData.maskMapping).length > 0) {
+        maskMapping.value = { ...maskMapping.value, ...llmData.maskMapping };
+      }
 
       // 组合结果
       results.value = {
@@ -491,7 +517,7 @@
     if (!results.value) return;
     const content = buildMarkdownReport(
       results.value,
-      getLlmText(),
+      getDecodedLlmText(),
       detectedEntities.value.length,
     );
     exportMarkdownReport(content, `desensitization-report-${Date.now()}.md`);
@@ -544,6 +570,8 @@
     formData.customParams = "";
     results.value = null;
     detectedEntities.value = [];
+    maskMapping.value = {};
+    showDecoded.value = true;
     error.value = "";
     processingStep.value = "";
     removeFile();
@@ -586,6 +614,23 @@
       r.desensitizedResponse ?? r.originalResponse ?? r.content ?? "";
     return formatText(text);
   };
+
+  // 解码还原后的LLM文本：将 AI 返回内容中的 [PHONE_1]、[MASKED_1] 等脱敏标记
+  // 精准替换为原始业务数据，实现"脱敏发送 → AI答复 → 前端还原"的完整闭环
+  const getDecodedLlmText = () => {
+    const raw = getLlmText();
+    if (!raw) return "";
+    return decodeText(raw, maskMapping.value);
+  };
+
+  // 本次已成功还原的脱敏标记数量（用于面板角标提示）
+  const decodedCount = computed(() => {
+    const raw = getLlmText();
+    if (!raw) return 0;
+    return (raw.match(/\[[^\[\]]+\]/g) || []).filter(
+      (token) => maskMapping.value[token],
+    ).length;
+  });
 
   // 前端策略值映射为后端策略名
   function mapStrategyToBackend(val) {
@@ -793,7 +838,10 @@
       :is-typing="isTyping"
       :highlighted-original-html="getHighlightedOriginal()"
       :desensitized-prompt="formatText(results.desensitizedPrompt)"
-      :llm-text="getLlmText()"
+      :llm-text="showDecoded ? getDecodedLlmText() : getLlmText()"
+      :decoded-count="decodedCount"
+      :show-decoded="showDecoded"
+      @toggle-decoded="showDecoded = !showDecoded"
       :provider-icon="getCurrentProvider().icon"
       :loading="loading"
       @copy="copyToClipboard"

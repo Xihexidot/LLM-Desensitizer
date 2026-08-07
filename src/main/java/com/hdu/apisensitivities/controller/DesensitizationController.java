@@ -25,7 +25,7 @@ public class DesensitizationController {
     private final DataParserManager dataParserManager;
 
     public DesensitizationController(DesensitizationManager desensitizationManager,
-                                     DataParserManager dataParserManager) {
+            DataParserManager dataParserManager) {
         this.desensitizationManager = desensitizationManager;
         this.dataParserManager = dataParserManager;
     }
@@ -61,7 +61,7 @@ public class DesensitizationController {
         // 验证请求是否包含结构化数据
         if (!request.isStructuredData()) {
             return ResponseEntity.badRequest().body(
-                    new DesensitizationResponse(null, null, null, false, "无效的结构化数据请求"));
+                    new DesensitizationResponse(null, null, null, false, "无效的结构化数据请求", Map.of()));
         }
 
         // 确保数据类型设置正确
@@ -91,7 +91,7 @@ public class DesensitizationController {
             // 检查文件是否为空
             if (file.isEmpty()) {
                 return ResponseEntity.badRequest().body(
-                        new DesensitizationResponse(null, null, null, false, "上传文件不能为空"));
+                        new DesensitizationResponse(null, null, null, false, "上传文件不能为空", Map.of()));
             }
 
             // 构建脱敏请求
@@ -105,7 +105,7 @@ public class DesensitizationController {
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(
-                    new DesensitizationResponse(null, null, null, false, "处理二进制数据失败: " + e.getMessage()));
+                    new DesensitizationResponse(null, null, null, false, "处理二进制数据失败: " + e.getMessage(), Map.of()));
         }
     }
 
@@ -122,11 +122,9 @@ public class DesensitizationController {
         Map<String, DesensitizationResponse> responses = requests.parallelStream()
                 .collect(java.util.stream.Collectors.toMap(
                         DesensitizationRequest::getContent,
-                        desensitizationManager::process
-                ));
+                        desensitizationManager::process));
         return ResponseEntity.ok(responses);
     }
-
 
     /**
      * 健康检查端点

@@ -10,6 +10,7 @@ import com.hdu.apisensitivities.service.ScenarioPerception.ScenarioAnalysisResul
 import com.hdu.apisensitivities.service.Desensitization.DesensitizationStrategy;
 import com.hdu.apisensitivities.service.Desensitization.DesensitizationVerifier;
 import com.hdu.apisensitivities.service.Desensitization.DesensitizeRequestContext;
+import com.hdu.apisensitivities.service.Desensitization.GlobalSessionContextRepository;
 import com.hdu.apisensitivities.service.SensitiveDetection.TextSensitiveDetectionService;
 
 import lombok.extern.slf4j.Slf4j;
@@ -44,6 +45,7 @@ public class DesensitizationManager {
     private final DataParserManager dataParserManager;
     private final DesensitizationRuleProperties ruleProperties;
     private final DesensitizationVerifier verifier;
+    private final GlobalSessionContextRepository contextRepository;
 
     /**
      * 构造脱敏管理器实例。
@@ -53,17 +55,20 @@ public class DesensitizationManager {
      * @param dataParserManager 数据解析管理器，负责将不同格式（JSON、XML、二进制等）转换为统一文本
      * @param ruleProperties    脱敏规则动态配置（分级开关、类型级别、校验开关等）
      * @param verifier          脱敏结果双重校验器（算法二次扫描 + 人工复核队列）
+     * @param contextRepository 会话级一致性缓存，提供占位符与明文的反向映射用于前端解码还原
      */
     public DesensitizationManager(TextSensitiveDetectionService detectionService,
             List<DesensitizationStrategy> strategies,
             DataParserManager dataParserManager,
             DesensitizationRuleProperties ruleProperties,
-            DesensitizationVerifier verifier) {
+            DesensitizationVerifier verifier,
+            GlobalSessionContextRepository contextRepository) {
         this.detectionService = detectionService;
         this.strategies = strategies;
         this.dataParserManager = dataParserManager;
         this.ruleProperties = ruleProperties;
         this.verifier = verifier;
+        this.contextRepository = contextRepository;
     }
 
     /**
@@ -161,12 +166,16 @@ public class DesensitizationManager {
             message = "脱敏处理成功（算法校验未通过，已进入人工复核队列，覆盖率 "
                     + String.format("%.2f", verification.getCoverage()) + "）";
         }
+        // 会话内占位符 → 明文的反向映射，供前端将 AI 返回内容中的脱敏标记还原为原始业务数据
+        Map<String, String> maskMapping = contextRepository
+                .getReverseMapping(DesensitizeRequestContext.getSessionId());
         return new DesensitizationResponse(
                 result.getOriginalContent(),
                 result.getDesensitizedContent(),
                 entities,
                 true,
-                message);
+                message,
+                maskMapping);
     }
 
     private DesensitizationResponse buildFailedResponse(DesensitizationRequest request, String errorMessage) {
@@ -176,7 +185,8 @@ public class DesensitizationManager {
                 originalContent,
                 Collections.emptyList(),
                 false,
-                errorMessage);
+                errorMessage,
+                Collections.emptyMap());
     }
 
     // 敏感信息检测

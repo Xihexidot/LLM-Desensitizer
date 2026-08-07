@@ -27,6 +27,16 @@
       type: String,
       default: "",
     },
+    // 已成功还原的脱敏标记数量（>0 时展示还原状态角标与切换入口）
+    decodedCount: {
+      type: Number,
+      default: 0,
+    },
+    // 当前是否展示解码还原后的文本（true=还原结果，false=脱敏原文）
+    showDecoded: {
+      type: Boolean,
+      default: true,
+    },
     providerIcon: {
       type: String,
       default: "⚪",
@@ -37,7 +47,13 @@
     },
   });
 
-  defineEmits(["copy", "export-markdown", "export-pdf", "share-screenshot"]);
+  defineEmits([
+    "copy",
+    "export-markdown",
+    "export-pdf",
+    "share-screenshot",
+    "toggle-decoded",
+  ]);
 
   const resultsRoot = ref(null);
   const renderedMarkdown = ref("");
@@ -96,6 +112,14 @@
       await updateRenderedMarkdown(value);
     },
     { immediate: true },
+  );
+
+  // 展示/复制内容切换（还原结果 ↔ 脱敏原文）时，同步刷新 Markdown 渲染
+  watch(
+    () => props.llmText,
+    async (value) => {
+      await updateRenderedMarkdown(value);
+    },
   );
 
   function getRootElement() {
@@ -179,8 +203,30 @@
 
     <div class="llm-response-panel">
       <div class="panel-header">
-        <h4>{{ providerIcon }} {{ results.llmProvider }} 响应</h4>
+        <h4>
+          {{ providerIcon }} {{ results.llmProvider }} 响应
+          <span
+            v-if="decodedCount > 0"
+            class="decoded-badge"
+            :title="
+              showDecoded
+                ? '已还原 AI 答复中的脱敏标记为原始业务数据'
+                : '当前展示 AI 答复中的脱敏标记原文'
+            "
+            >已还原 {{ decodedCount }} 个脱敏标记</span
+          >
+        </h4>
         <div class="panel-actions">
+          <button
+            v-if="decodedCount > 0"
+            class="copy-btn toggle-btn"
+            :title="
+              showDecoded ? '查看AI返回的脱敏原文' : '查看还原后的原始数据'
+            "
+            @click="$emit('toggle-decoded')"
+          >
+            {{ showDecoded ? "🔍 查看脱敏原文" : "✨ 查看还原结果" }}
+          </button>
           <button
             class="copy-btn"
             title="复制到剪贴板"
@@ -251,6 +297,20 @@
   .results-header h3 {
     margin: 0;
     color: #646cff;
+  }
+
+  /* 脱敏标记还原状态角标 */
+  .decoded-badge {
+    display: inline-block;
+    margin-left: 10px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: rgba(16, 185, 129, 0.15);
+    border: 1px solid rgba(16, 185, 129, 0.4);
+    color: #10b981;
+    font-size: 0.72em;
+    font-weight: 500;
+    vertical-align: middle;
   }
 
   .export-actions,

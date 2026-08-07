@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 脱敏处理响应实体，封装脱敏操作的结果。
@@ -67,4 +68,15 @@ public class DesensitizationResponse {
      * </p>
      */
     private String message;
+
+    /**
+     * 脱敏标记与原信息的比对映射，用于前端解码还原 AI 返回内容中的脱敏标记。
+     * <p>
+     * Key 为脱敏后文本中的占位符（如 {@code "[PHONE_1]"}、{@code "[MASKED_1]"}），
+     * Value 为该占位符对应的原始业务数据明文。
+     * 该映射来源于会话级缓存 {@code GlobalSessionContextRepository}，
+     * 保证同一会话内同一明文始终映射到同一占位符。
+     * </p>
+     */
+    private Map<String, String> maskMapping;
 }

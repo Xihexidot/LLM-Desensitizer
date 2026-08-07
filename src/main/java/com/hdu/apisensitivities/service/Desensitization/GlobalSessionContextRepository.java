@@ -1,6 +1,7 @@
 package com.hdu.apisensitivities.service.Desensitization;
 
 import org.springframework.stereotype.Component;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -58,5 +59,35 @@ public class GlobalSessionContextRepository {
         // 5. 存入缓存
         currentSessionMap.put(cacheKey, finalMaskedValue);
         return finalMaskedValue;
+    }
+
+    /**
+     * 获取指定会话内"脱敏占位符 → 原始明文"的反向映射，供前端解码还原使用。
+     * <p>
+     * 缓存内层 Key 为 "敏感类型:原始明文"（如 {@code "PHONE_NUMBER:13812345678"}），
+     * Value 为脱敏占位符（如 {@code "[PHONE_1]"}）。本方法将缓存反转为
+     * {@code {占位符: 明文}}，前端即可据此将 AI 返回内容中的脱敏标记还原为原始业务数据。
+     * </p>
+     *
+     * @param sessionId 会话ID
+     * @return 占位符 → 明文的映射；会话不存在时返回空映射（非 null）
+     */
+    public Map<String, String> getReverseMapping(String sessionId) {
+        Map<String, String> reverse = new LinkedHashMap<>();
+        if (sessionId == null || sessionId.isEmpty()) {
+            return reverse;
+        }
+        Map<String, String> currentSessionMap = sessionCache.get(sessionId);
+        if (currentSessionMap == null) {
+            return reverse;
+        }
+        for (Map.Entry<String, String> entry : currentSessionMap.entrySet()) {
+            String cacheKey = entry.getKey();
+            int colonIndex = cacheKey.indexOf(':');
+            if (colonIndex > 0 && colonIndex < cacheKey.length() - 1) {
+                reverse.put(entry.getValue(), cacheKey.substring(colonIndex + 1));
+            }
+        }
+        return reverse;
     }
 }
