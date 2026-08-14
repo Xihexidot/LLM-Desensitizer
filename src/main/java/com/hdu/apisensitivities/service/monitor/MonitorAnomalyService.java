@@ -106,7 +106,8 @@ public class MonitorAnomalyService {
             String raw = String.valueOf(row.get("target_provider"));
             long cnt = ((Number) row.get("cnt")).longValue();
             var info = com.hdu.apisensitivities.utils.ProviderNormalizer.normalize(raw);
-            if (info.code().equals(com.hdu.apisensitivities.utils.ProviderNormalizer.UNKNOWN.code()) && cnt >= threshold) {
+            if (info.code().equals(com.hdu.apisensitivities.utils.ProviderNormalizer.UNKNOWN.code())
+                    && cnt >= threshold) {
                 anomalies.add(build("MEDIUM", "UNKNOWN_PROVIDER", "未识别 LLM 平台",
                         "存在 " + cnt + " 次调用指向未登记的外部平台（原始标识: " + raw
                                 + "），建议核查是否属于企业允许名单。",

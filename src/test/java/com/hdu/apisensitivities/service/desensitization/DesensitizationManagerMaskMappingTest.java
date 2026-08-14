@@ -86,13 +86,13 @@ class DesensitizationManagerMaskMappingTest {
                                 .language("zh").dataType("TEXT").sessionId("sess-b").build());
 
                 Map<String, String> mapA = a.getMaskMapping();
-        Map<String, String> mapB = b.getMaskMapping();
-        assertFalse(mapA.isEmpty());
-        assertFalse(mapB.isEmpty());
-        // 会话隔离：会话 B 只有 1 条映射（编号从 1 重新开始），不继承会话 A 的计数
-        assertEquals(2, mapA.size());
-        assertEquals(1, mapB.size());
-        // 不依赖具体占位符格式（Mask 策略为 [PHONE_1]，Graded MEDIUM 为 [138****8000_1]）
-        assertTrue(mapB.containsValue("13800138000"), "会话B应能还原手机号明文");
-    }
+                Map<String, String> mapB = b.getMaskMapping();
+                assertFalse(mapA.isEmpty());
+                assertFalse(mapB.isEmpty());
+                // 会话隔离：会话 B 只有 1 条映射（编号从 1 重新开始），不继承会话 A 的计数
+                assertEquals(2, mapA.size());
+                assertEquals(1, mapB.size());
+                // 不依赖具体占位符格式（Mask 策略为 [PHONE_1]，Graded MEDIUM 为 [138****8000_1]）
+                assertTrue(mapB.containsValue("13800138000"), "会话B应能还原手机号明文");
+        }
 }

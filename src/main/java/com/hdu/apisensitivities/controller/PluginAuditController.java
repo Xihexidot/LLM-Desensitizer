@@ -81,6 +81,7 @@ public class PluginAuditController {
                 .auditEventId(eventId)
                 .riskLevel(riskDecision.getRiskLevel())
                 .decisionAction(riskDecision.getDecisionAction())
+                .maskMapping(result.getMaskMapping())
                 .build());
     }
 

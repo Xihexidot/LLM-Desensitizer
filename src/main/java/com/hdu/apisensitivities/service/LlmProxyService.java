@@ -131,7 +131,6 @@ public class LlmProxyService {
                 .desensitizedResponse(result.getDesensitizedResponse())
                 .inputSensitiveEntities(result.getInputEntities())
                 .outputSensitiveEntities(result.getOutputEntities())
-                .maskMapping(result.getMaskMapping())
                 .provider(provider)
                 .model(config.getModel())
                 .processingTimeMs(processingTime)
@@ -262,21 +261,11 @@ public class LlmProxyService {
         String finalResponse = restoreResponse(llmRawResponse);
         List<SensitiveEntity> allEntities = mergeInputEntities(baseDesensitized, aiEntities);
 
-        // 合并两类脱敏标记映射，供前端解码还原 AI 答复内容：
-        // 1) 基础脱敏（[PHONE_1] → 明文，来自会话缓存反向导出）
-        // 2) AI 语义脱敏（[ENTITY_N] → 语义实体文本，来自线程映射快照）
-        Map<String, String> maskMapping = new LinkedHashMap<>();
-        if (baseDesensitized.getMaskMapping() != null) {
-            maskMapping.putAll(baseDesensitized.getMaskMapping());
-        }
-        maskMapping.putAll(semanticPlaceholderStrategy.getCurrentMapping());
-
         return new DesensitizationResult(
                 llmRawResponse,
                 finalResponse,
                 allEntities,
-                List.of(),
-                maskMapping);
+                List.of());
     }
 
     private List<String> extractSemanticEntities(DesensitizationResponse baseDesensitized) {
@@ -633,16 +622,13 @@ public class LlmProxyService {
         private final String desensitizedResponse;
         private final List<SensitiveEntity> inputEntities;
         private final List<SensitiveEntity> outputEntities;
-        private final Map<String, String> maskMapping;
 
         public DesensitizationResult(String originalResponse, String desensitizedResponse,
-                List<SensitiveEntity> inputEntities, List<SensitiveEntity> outputEntities,
-                Map<String, String> maskMapping) {
+                List<SensitiveEntity> inputEntities, List<SensitiveEntity> outputEntities) {
             this.originalResponse = originalResponse;
             this.desensitizedResponse = desensitizedResponse;
             this.inputEntities = inputEntities;
             this.outputEntities = outputEntities;
-            this.maskMapping = maskMapping;
         }
 
         public String getOriginalResponse() {
@@ -659,10 +645,6 @@ public class LlmProxyService {
 
         public List<SensitiveEntity> getOutputEntities() {
             return outputEntities;
-        }
-
-        public Map<String, String> getMaskMapping() {
-            return maskMapping;
         }
     }
 

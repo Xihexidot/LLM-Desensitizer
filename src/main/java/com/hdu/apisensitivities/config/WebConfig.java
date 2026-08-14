@@ -27,13 +27,12 @@ public class WebConfig implements WebMvcConfigurer {
     @Override
     public void addInterceptors(@NonNull InterceptorRegistry registry) {
         registry.addInterceptor(Objects.requireNonNull(apiInterceptor))
-                .addPathPatterns("/api/**")       // 监控所有 API 路径
-                .excludePathPatterns(             // 整合排除路径
+                .addPathPatterns("/api/**") // 监控所有 API 路径
+                .excludePathPatterns( // 整合排除路径
                         "/api/health",
                         "/health",
                         "/swagger-ui/**",
-                        "/v3/api-docs/**"
-                );
+                        "/v3/api-docs/**");
         // 调用监控模块：仅允许安全审计/运维管理角色访问
         registry.addInterceptor(monitorAuthInterceptor)
                 .addPathPatterns("/gateway/v1/monitor/**");

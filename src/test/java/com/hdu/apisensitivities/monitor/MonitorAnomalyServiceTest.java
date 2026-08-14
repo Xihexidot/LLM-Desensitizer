@@ -101,7 +101,8 @@ class MonitorAnomalyServiceTest {
     @Test
     void unknownProvider_5Calls_unregisteredPlatform_triggersAlert() {
         for (int i = 0; i < 5; i++) {
-            insertRow(PREFIX + String.format("up-%03d", i), "u-up-001", "BROWSER_PLUGIN", "mystery-llm-xyz", "ALLOW", "LOW");
+            insertRow(PREFIX + String.format("up-%03d", i), "u-up-001", "BROWSER_PLUGIN", "mystery-llm-xyz", "ALLOW",
+                    "LOW");
         }
         List<Map<String, Object>> anomalies = anomalyService.detect(day);
         Map<String, Object> hit = find(anomalies, "UNKNOWN_PROVIDER");
@@ -115,10 +116,12 @@ class MonitorAnomalyServiceTest {
     void alerts_sortedByLevelHighFirst() {
         // 同时构造高频 + 未识别平台两类告警，验证按等级降序输出
         for (int i = 0; i < 20; i++) {
-            insertRow(PREFIX + String.format("sort-hf-%03d", i), "u-sort-001", "BROWSER_PLUGIN", "DeepSeek", "ALLOW", "LOW");
+            insertRow(PREFIX + String.format("sort-hf-%03d", i), "u-sort-001", "BROWSER_PLUGIN", "DeepSeek", "ALLOW",
+                    "LOW");
         }
         for (int i = 0; i < 5; i++) {
-            insertRow(PREFIX + String.format("sort-up-%03d", i), "u-sort-002", "backend-api", "shadow-ai-vendor", "ALLOW", "LOW");
+            insertRow(PREFIX + String.format("sort-up-%03d", i), "u-sort-002", "backend-api", "shadow-ai-vendor",
+                    "ALLOW", "LOW");
         }
         List<Map<String, Object>> anomalies = anomalyService.detect(day);
         assertTrue(find(anomalies, "HIGH_FREQUENCY") != null);

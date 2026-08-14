@@ -97,17 +97,4 @@ public class SemanticPlaceholderStrategy implements DesensitizationStrategy {
         }
         return restoredText;
     }
-
-    /**
-     * 获取当前线程"占位符 → 实体文本"映射的只读副本。
-     * <p>
-     * 供外层在完成 restore 后，将 AI 链路脱敏标记（{@code [ENTITY_N]}）与其对应的
-     * 实体文本一并导出给前端解码还原，实现 AI 脱敏结果的可逆闭环。
-     * </p>
-     *
-     * @return 当前请求线程的脱敏标记映射副本；无映射时为空 Map（非 null）
-     */
-    public Map<String, String> getCurrentMapping() {
-        return new LinkedHashMap<>(mappingTable.get());
-    }
 }
