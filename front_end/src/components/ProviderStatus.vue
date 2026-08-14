@@ -86,7 +86,9 @@
     const res = await fetch(url, { headers: roleHeaders() });
     if (res.status === 403) {
       forbidden.value = true;
-      throw new Error("当前角色无权访问监控数据，请切换为安全审计 / 运维管理角色");
+      throw new Error(
+        "当前角色无权访问监控数据，请切换为安全审计 / 运维管理角色",
+      );
     }
     forbidden.value = false;
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -138,7 +140,9 @@
       datasets: [
         {
           data: list.map((p) => p.count),
-          backgroundColor: list.map((_, i) => PROVIDER_COLORS[i % PROVIDER_COLORS.length]),
+          backgroundColor: list.map(
+            (_, i) => PROVIDER_COLORS[i % PROVIDER_COLORS.length],
+          ),
           borderWidth: 1,
         },
       ],
@@ -171,14 +175,20 @@
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 10 } },
+      legend: {
+        position: "bottom",
+        labels: { usePointStyle: true, boxWidth: 10 },
+      },
     },
   };
   const trendChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: { position: "bottom", labels: { usePointStyle: true, boxWidth: 10 } },
+      legend: {
+        position: "bottom",
+        labels: { usePointStyle: true, boxWidth: 10 },
+      },
     },
     scales: {
       x: { stacked: true, grid: { display: false } },
@@ -196,16 +206,29 @@
     <div class="page-head">
       <h2>外部 LLM 调用监控</h2>
       <div class="head-actions">
-        <span class="refresh-hint">每 10 秒自动刷新 · 更新于 {{ lastUpdated || "-" }}</span>
+        <span class="refresh-hint"
+          >每 10 秒自动刷新 · 更新于 {{ lastUpdated || "-" }}</span
+        >
         <label class="role-picker">
           监控角色
-          <select v-model="role" @change="changeRole">
-            <option v-for="r in ROLE_OPTIONS" :key="r.value" :value="r.value">
+          <select
+            v-model="role"
+            @change="changeRole"
+          >
+            <option
+              v-for="r in ROLE_OPTIONS"
+              :key="r.value"
+              :value="r.value"
+            >
               {{ r.label }} ({{ r.value }})
             </option>
           </select>
         </label>
-        <button class="btn-refresh" @click="fetchAll" :disabled="loading">
+        <button
+          class="btn-refresh"
+          @click="fetchAll"
+          :disabled="loading"
+        >
           {{ loading ? "刷新中..." : "立即刷新" }}
         </button>
       </div>
@@ -217,10 +240,19 @@
       仅限安全审计 / 运维管理角色访问。
     </div>
 
-    <div v-if="forbidden" class="gw-error">
-      权限不足：当前角色（{{ role }}）无权访问监控数据。请切换为 AUDITOR（安全审计）或 ADMIN（运维管理）角色后重试。
+    <div
+      v-if="forbidden"
+      class="gw-error"
+    >
+      权限不足：当前角色（{{ role }}）无权访问监控数据。请切换为
+      AUDITOR（安全审计）或 ADMIN（运维管理）角色后重试。
     </div>
-    <div v-else-if="error" class="gw-error">{{ error }}</div>
+    <div
+      v-else-if="error"
+      class="gw-error"
+    >
+      {{ error }}
+    </div>
 
     <!-- 指标卡片 -->
     <div class="stats-row">
@@ -250,17 +282,39 @@
     <div class="charts-row">
       <div class="chart-box">
         <div class="chart-title">员工访问 LLM 服务分布（按平台）</div>
-        <div v-if="providerChartData" style="height: 240px">
-          <Pie :data="providerChartData" :options="chartOptions" />
+        <div
+          v-if="providerChartData"
+          style="height: 240px"
+        >
+          <Pie
+            :data="providerChartData"
+            :options="chartOptions"
+          />
         </div>
-        <div v-else class="chart-empty">今日暂无调用数据</div>
+        <div
+          v-else
+          class="chart-empty"
+        >
+          今日暂无调用数据
+        </div>
       </div>
       <div class="chart-box">
         <div class="chart-title">近 24 小时调用趋势（插件 / API 堆叠）</div>
-        <div v-if="trendChartData" style="height: 240px">
-          <Bar :data="trendChartData" :options="trendChartOptions" />
+        <div
+          v-if="trendChartData"
+          style="height: 240px"
+        >
+          <Bar
+            :data="trendChartData"
+            :options="trendChartOptions"
+          />
         </div>
-        <div v-else class="chart-empty">今日暂无调用数据</div>
+        <div
+          v-else
+          class="chart-empty"
+        >
+          今日暂无调用数据
+        </div>
       </div>
     </div>
 
@@ -269,8 +323,15 @@
       分平台调用统计
       <span class="section-sub">按标准化平台聚合，含插件 / API 渠道拆分</span>
     </div>
-    <div v-if="overview.byProvider?.length" class="provider-grid">
-      <div v-for="p in overview.byProvider" :key="p.code" class="provider-card">
+    <div
+      v-if="overview.byProvider?.length"
+      class="provider-grid"
+    >
+      <div
+        v-for="p in overview.byProvider"
+        :key="p.code"
+        class="provider-card"
+      >
         <div class="p-name">{{ p.name }}</div>
         <div class="p-count">{{ p.count }} <span class="unit">次</span></div>
         <div class="p-breakdown">
@@ -279,16 +340,25 @@
         </div>
       </div>
     </div>
-    <div v-else-if="!loading" class="empty">
-      今日暂无外部 LLM 调用记录。员工通过浏览器插件或网关 API 调用模型后，统计数据将在此展示。
+    <div
+      v-else-if="!loading"
+      class="empty"
+    >
+      今日暂无外部 LLM 调用记录。员工通过浏览器插件或网关 API
+      调用模型后，统计数据将在此展示。
     </div>
 
     <!-- 异常告警面板 -->
     <div class="section-title">
       异常风险告警
-      <span class="section-sub">当日异常检测结果（{{ anomalies.count }} 条）</span>
+      <span class="section-sub"
+        >当日异常检测结果（{{ anomalies.count }} 条）</span
+      >
     </div>
-    <div v-if="anomalies.items?.length" class="anomaly-list">
+    <div
+      v-if="anomalies.items?.length"
+      class="anomaly-list"
+    >
       <div
         v-for="a in anomalies.items"
         :key="a.id"
@@ -296,7 +366,10 @@
         :class="'level-' + levelClass(a.level)"
       >
         <div class="anomaly-head">
-          <span class="level-tag" :class="'tag-' + levelClass(a.level)">
+          <span
+            class="level-tag"
+            :class="'tag-' + levelClass(a.level)"
+          >
             {{ LEVEL_LABELS[a.level] || a.level }}
           </span>
           <span class="a-title">{{ a.title }}</span>
@@ -310,7 +383,12 @@
         </div>
       </div>
     </div>
-    <div v-else-if="!loading" class="empty">今日未检测到异常调用行为</div>
+    <div
+      v-else-if="!loading"
+      class="empty"
+    >
+      今日未检测到异常调用行为
+    </div>
 
     <div class="note">
       说明：此页面仅展示聚合统计数据，用于安全审计与异常检测。后端不转发员工请求到外部模型，

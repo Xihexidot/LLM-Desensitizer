@@ -21,24 +21,24 @@ const ANY_BRACKET_REGEX = /\[[^\[\]]+\]/g;
 
 // SensitiveType 枚举名 → Mask 策略占位符标识名（后端 MASK_TEMPLATES）
 const TYPE_TOKEN_NAME = {
-  PHONE_NUMBER: 'PHONE',
-  BANK_CARD: 'BANK_CARD',
-  EMAIL: 'EMAIL',
-  ID_CARD: 'ID_CARD',
-  NAME: 'NAME',
-  PERSON: 'PERSON',
-  ADDRESS: 'ADDRESS',
-  ORGANIZATION: 'ORG',
-  CREDIT_CARD: 'CREDIT_CARD',
-  PASSWORD: 'PASSWORD',
-  API_KEY: 'API_KEY',
-  PASSPORT: 'PASSPORT',
-  BIRTH_DATE: 'BIRTH_DATE',
-  CUSTOM: 'CUSTOM',
-  IP_ADDRESS: 'IP',
-  LICENSE_PLATE: 'PLATE',
+  PHONE_NUMBER: "PHONE",
+  BANK_CARD: "BANK_CARD",
+  EMAIL: "EMAIL",
+  ID_CARD: "ID_CARD",
+  NAME: "NAME",
+  PERSON: "PERSON",
+  ADDRESS: "ADDRESS",
+  ORGANIZATION: "ORG",
+  CREDIT_CARD: "CREDIT_CARD",
+  PASSWORD: "PASSWORD",
+  API_KEY: "API_KEY",
+  PASSPORT: "PASSPORT",
+  BIRTH_DATE: "BIRTH_DATE",
+  CUSTOM: "CUSTOM",
+  IP_ADDRESS: "IP",
+  LICENSE_PLATE: "PLATE",
   // 无专用模板的实体在 Mask 策略中兜底为 [MASKED_1]
-  SOCIAL_SECURITY: 'MASKED',
+  SOCIAL_SECURITY: "MASKED",
 };
 
 /**
@@ -55,7 +55,10 @@ export function decodeText(text, maskMapping) {
   if (!text || !maskMapping || Object.keys(maskMapping).length === 0) {
     return text;
   }
-  return text.replace(ANY_BRACKET_REGEX, (token) => maskMapping[token] ?? token);
+  return text.replace(
+    ANY_BRACKET_REGEX,
+    (token) => maskMapping[token] ?? token,
+  );
 }
 
 /**
@@ -92,7 +95,7 @@ export function buildMaskMapping(desensitizedText, entities) {
 
   // 实体按 start 降序预处理
   const sortedEntities = [...entities]
-    .filter((e) => e && e.originalText != null && typeof e.start === 'number')
+    .filter((e) => e && e.originalText != null && typeof e.start === "number")
     .sort((a, b) => b.start - a.start);
 
   // 按类型分组（枚举名 → 实体列表），同类型内按明文去重保持首次出现顺序

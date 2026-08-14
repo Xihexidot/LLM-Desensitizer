@@ -471,12 +471,6 @@
 
       const llmData = await llmResponse.json();
 
-      // 合并 AI 链路返回的脱敏标记映射（[ENTITY_N] → 语义实体、[TYPE_N] → 明文），
-      // 与前端脱敏映射合并后统一用于解码还原 AI 答复内容
-      if (llmData.maskMapping && Object.keys(llmData.maskMapping).length > 0) {
-        maskMapping.value = { ...maskMapping.value, ...llmData.maskMapping };
-      }
-
       // 组合结果
       results.value = {
         originalPrompt: combinedPrompt,
