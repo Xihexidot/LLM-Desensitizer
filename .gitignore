@@ -15,3 +15,6 @@ node_modules/
 plugin/.browsers/
 plugin/debug.log
 plugin/tests/last-run*.log
+plugin/test-results/
+# 浏览器扩展签名密钥（勿提交，用于固定扩展 ID）
+plugin/extension-key.pem

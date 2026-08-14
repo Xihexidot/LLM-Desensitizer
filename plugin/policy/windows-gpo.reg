@@ -5,8 +5,8 @@ Windows Registry Editor Version 5.00
 ; =============================================================
 ; 用途：企业 IT 管理员通过组策略将员工工号、部门等固定业务属性推送到
 ;       chrome.storage.managed（只读，员工端不可篡改）。
-; 使用前必须将 {EXTENSION_ID} 替换为实际扩展 ID：
-;   chrome://extensions → 开启"开发者模式" → 复制插件卡片上的 ID。
+; 本文件已按扩展固定 ID ndlhcpcbahekidhmdcfkbmjdehiehglg 填好（manifest "key" 固化），
+; 直接导入即可使用。
 ;
 ; 推送方式 A：直接导入本注册表（临时验证用，需要管理员权限）
 ;   双击导入或运行：reg import plugin\policy\windows-gpo.reg
@@ -22,7 +22,7 @@ Windows Registry Editor Version 5.00
 ; =============================================================
 
 ; ---- Chrome（注册表路径）----
-[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\{EXTENSION_ID}\policy]
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Google\Chrome\3rdparty\extensions\ndlhcpcbahekidhmdcfkbmjdehiehglg\policy]
 "userId"="E100123"
 "department"="研发部"
 "companyName"="XX科技有限公司"
@@ -30,7 +30,7 @@ Windows Registry Editor Version 5.00
 "complianceMode"="STRICT"
 
 ; ---- Microsoft Edge（同为 Chromium 内核，路径不同）----
-[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\{EXTENSION_ID}\policy]
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Edge\3rdparty\extensions\ndlhcpcbahekidhmdcfkbmjdehiehglg\policy]
 "userId"="E100123"
 "department"="研发部"
 "companyName"="XX科技有限公司"

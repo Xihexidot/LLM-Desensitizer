@@ -30,15 +30,14 @@
 
 ## 三、Windows GPO 部署步骤
 
-1. 获取扩展 ID：`chrome://extensions` → 开启"开发者模式" → 复制插件 ID（形如 `abc123...`）。
-2. 将 `plugin/policy/windows-gpo.reg` 中的 `{EXTENSION_ID}` 全部替换为真实 ID。
-3. **临时验证**（单机）：管理员身份运行 `reg import windows-gpo.reg`。
-4. **正式发布**：在 AD 域控上配置 GPO → "计算机配置 → 管理模板"，导入 Chrome ADMX 模板，将 5 个策略值填入 `3rdparty/extensions/{ID}/policy` 对应项。
-5. 员工端验证：`chrome://policy` → 点"重新加载策略" → 扩展策略 Status = OK。
+1. 扩展 ID 已固定为 `ndlhcpcbahekidhmdcfkbmjdehiehglg`（`plugin/manifest.json` 的 `"key"` 字段固化，任何电脑加载 ID 恒定），`windows-gpo.reg` 已填好，无需手动替换。
+2. **临时验证**（单机）：管理员身份运行 `reg import windows-gpo.reg`。
+3. **正式发布**：在 AD 域控上配置 GPO → "计算机配置 → 管理模板"，导入 Chrome ADMX 模板，将 5 个策略值填入 `3rdparty/extensions/ndlhcpcbahekidhmdcfkbmjdehiehglg/policy` 对应项。
+4. 员工端验证：`chrome://policy` → 点"重新加载策略" → 扩展策略 Status = OK。
 
 ## 四、Mac MDM 部署步骤
 
-1. 将 `plugin/policy/macos-mdm.plist` 中 `{EXTENSION_ID}` 替换为真实 ID。
+1. `plugin/policy/macos-mdm.plist` 已按固定 ID `ndlhcpcbahekidhmdcfkbmjdehiehglg` 填好，无需手动替换。
 2. 在 MDM 控制台（Jamf / Intune / Kandji）中：
    - 上传为 `com.apple.ManagedClient.preferences` 描述文件；
    - `Data` 字段填入本 plist 的 **base64 编码**内容（MDM 要求）；
@@ -47,7 +46,7 @@
 
 ## 五、Linux policies 部署
 
-1. 替换 `plugin/policy/linux-policies.json` 中的 `{EXTENSION_ID}`。
+1. `plugin/policy/linux-policies.json` 已按固定 ID `ndlhcpcbahekidhmdcfkbmjdehiehglg` 填好，无需手动替换。
 2. 复制到 `/etc/opt/chrome/policies/managed/ai-guard.json`（企业级路径，普通用户不可写）。
 3. 重启浏览器后 `chrome://policy` 验证。
 
