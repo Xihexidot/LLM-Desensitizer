@@ -3,6 +3,9 @@ const STORAGE_KEY_GATEWAY = "ai-guard-gateway";
 const STORAGE_KEY_USER_ID = "ai-guard-user-id";
 const STORAGE_KEY_USER_NAME = "ai-guard-user-name";
 const STORAGE_KEY_DEPT = "ai-guard-dept";
+// 脱敏映射（占位符 → 明文）存放于会话级 storage.session；content script 无权直接访问，
+// 统一经 background（特权上下文）读写，浏览器关闭即清空，兼顾数据一致性与安全性
+const MASK_MAPPING_KEY = "ai-guard-last-mask-mapping";
 
 importScripts("managed-store.js");
 
@@ -48,6 +51,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     })();
     return true;
   }
+  if (message?.type === "save-mask-mapping") {
+    chrome.storage.session
+      .set({ [MASK_MAPPING_KEY]: message.payload || {} })
+      .then(() => sendResponse({ ok: true }))
+      .catch((e) =>
+        sendResponse({ ok: false, error: e?.message || String(e) }),
+      );
+    return true;
+  }
+  if (message?.type === "load-mask-mapping") {
+    chrome.storage.session
+      .get(MASK_MAPPING_KEY)
+      .then((r) =>
+        sendResponse({ ok: true, maskMapping: r[MASK_MAPPING_KEY] || {} }),
+      )
+      .catch((e) =>
+        sendResponse({ ok: false, error: e?.message || String(e) }),
+      );
+    return true;
+  }
   if (message?.type === "open-config") {
     chrome.action.openPopup().catch((e) => {
       log("openPopup failed:", e?.message, "→ fallback to chrome.tabs.create");
@@ -66,6 +89,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
  */
 async function hasConfiguredGateway() {
   try {
+    // 1) 企业策略推送的网关（只读，优先；local 为空时不能误判为"未配置"）
+    const managed = await getManagedContext();
+    const managedGw = managed.gatewayUrl;
+    if (managedGw && String(managedGw).trim().length > 0) {
+      log("hasConfiguredGateway: managed gatewayUrl present → configured=true");
+      return true;
+    }
+    // 2) 员工在配置面板填写的网关
     const result = await chrome.storage.local.get(STORAGE_KEY_GATEWAY);
     const raw = result[STORAGE_KEY_GATEWAY];
     const configured = !!(raw && raw.trim().length > 0);
@@ -77,12 +108,24 @@ async function hasConfiguredGateway() {
     );
     return configured;
   } catch (e) {
-    log("hasConfiguredGateway: storage.local.get failed:", e?.message);
+    log("hasConfiguredGateway: read failed:", e?.message);
     return false;
   }
 }
 
 async function getBaseUrl() {
+  // 1) 企业策略推送的网关（只读，优先：避免员工自行填写/指向非受控网关）
+  const managed = await getManagedContext();
+  if (managed.gatewayUrl) {
+    const raw = String(managed.gatewayUrl).trim();
+    if (raw) {
+      log("getBaseUrl: using managed gatewayUrl=", raw);
+      return raw.startsWith("http://") || raw.startsWith("https://")
+        ? raw
+        : "http://" + raw;
+    }
+  }
+  // 2) 员工在配置面板填写的网关
   const result = await chrome.storage.local.get(STORAGE_KEY_GATEWAY);
   let raw = result[STORAGE_KEY_GATEWAY];
   if (!raw) {

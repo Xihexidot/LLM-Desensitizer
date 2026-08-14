@@ -3,6 +3,7 @@
   "name": "AI 输入安全助手",
   "version": "1.0",
   "description": "在用户发送到 AI 网站前检查输入内容，并提示脱敏或拦截",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAjAolYZWJU/FAVJEY1btl74VaO4p9exD2hDCJhb0ndxpmWx+wA21oGqk/C6seBqvZ4BtmYL6JrKVWb4SIr/ktNHF8P3RHLokr43Wo+qUxVq7/8S0I89wdvGfTbh1YmaiDhL2Iz3gBEgug4LA8MjFZjAQEf1h8u3M0ng1/3T9eOfs/Q2z7S7b169GkmjX+nYb2nV98QQJzn4tnTXfs8JGH4nWHdNA6hGLc1xneOaRwaji+sq/LLqO9Ieg+w8NVjAf6CxAjNed4JzdhUhOPCCR2mxaBvE/UUrvs/HM2mSN2NvxIBCDUUlXSVq/lvjkcA3qHZQLiXL4dWULTFBTn3JGxNwIDAQAB",
   "permissions": [
     "storage"
   ],
@@ -45,6 +46,7 @@
         "http://localhost:*/*"
       ],
       "js": [
+        "decode-util.js",
         "popup.js",
         "content.js"
       ],

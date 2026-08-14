@@ -12,17 +12,25 @@
     .row { margin-bottom: 12px; }
     .row label { display: block; font-size: 0.8rem; color: #475569; margin-bottom: 4px; font-weight: 500; }
     .row input, .row select { width: 100%; padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.85rem; }
-    .row input:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
+    .row textarea { width: 100%; padding: 7px 10px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 0.8rem; resize: vertical; font-family: inherit; }
+    .row input:focus, .row textarea:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 2px rgba(99,102,241,0.15); }
     .actions { display: flex; gap: 8px; margin-top: 16px; }
     button { flex: 1; padding: 8px 0; border-radius: 8px; border: none; cursor: pointer; font-size: 0.85rem; font-weight: 600; }
     .btn-save { background: #6366f1; color: #fff; }
     .btn-save:hover { background: #4f46e5; }
     .btn-test { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
     .btn-test:hover { background: #e2e8f0; }
+    .btn-restore { background: #059669; color: #fff; }
+    .btn-restore:hover { background: #047857; }
+    .btn-copy { background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0; }
+    .btn-copy:hover:not(:disabled) { background: #e2e8f0; }
+    .btn-copy:disabled { opacity: 0.5; cursor: not-allowed; }
     .status { font-size: 0.78rem; margin-top: 10px; min-height: 20px; }
     .status.ok { color: #059669; }
     .status.err { color: #dc2626; }
     .tip { font-size: 0.7rem; color: #94a3b8; margin-top: 10px; line-height: 1.4; }
+    .restore-result { margin-top: 8px; padding: 8px 10px; background: #f0fdf4; border: 1px solid #d1fae5; border-radius: 6px; font-size: 0.78rem; line-height: 1.6; color: #1e293b; word-break: break-all; max-height: 140px; overflow: auto; }
+    .restore-result mark { background: #fde68a; color: #78350f; border-radius: 3px; padding: 0 2px; }
   </style>
 </head>
 <body>
@@ -51,6 +59,20 @@
   <p class="tip">员工安装插件后需在此填写姓名和部门。</p>
   <p class="tip" style="color:#6366f1">企业部署：IT 管理员通过 Windows Group Policy / Mac MDM 推送工号与部门到 chrome.storage.managed，员工不可修改。</p>
 
+  <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0 12px;" />
+  <h2 style="font-size:0.9rem">剪贴板一键复原</h2>
+  <p class="sub">将 AI 回复中含脱敏标记的文本粘贴到此，一键还原为发送前的原始数据（映射取自本次浏览器会话最近一次脱敏发送）</p>
+  <div class="row">
+    <textarea id="restoreInput" rows="4" placeholder="粘贴脱敏文本，如：您的手机号是 [PHONE_NUMBER_1]，身份证是 [ID_CARD_1]"></textarea>
+  </div>
+  <div class="actions">
+    <button class="btn-restore" id="btnRestore">一键复原</button>
+    <button class="btn-copy" id="btnCopyResult" disabled>复制原文</button>
+  </div>
+  <div class="status" id="restoreStatus"></div>
+  <div class="restore-result" id="restoreResult" hidden></div>
+
+  <script src="decode-util.js"></script>
   <script src="config.js"></script>
 </body>
 </html>

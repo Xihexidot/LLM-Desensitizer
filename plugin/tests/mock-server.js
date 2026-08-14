@@ -45,9 +45,12 @@ function detectEntities(content) {
  * 按规则逐条替换原文中的敏感 token 为 [TYPE_n] 占位符。
  * 先按原始匹配顺序收集全部 token，再逐次替换首个剩余出现，
  * 同一 token 多次出现时编号递增（第二次出现 → [TYPE_2]）。
+ * 同时记录"占位符 → 原文"映射（模拟后端 GlobalSessionContextRepository 反向导出），
+ * 供插件"一键复原"解码使用。
  */
 function maskText(content) {
   let out = content;
+  const mapping = {};
   for (const rule of RULES) {
     const tokens = [];
     rule.re.lastIndex = 0;
@@ -59,10 +62,12 @@ function maskText(content) {
     const counts = {};
     for (const token of tokens) {
       counts[token] = (counts[token] || 0) + 1;
-      out = out.replace(token, `[${rule.type}_${counts[token]}]`);
+      const masked = `[${rule.type}_${counts[token]}]`;
+      out = out.replace(token, masked);
+      mapping[masked] = token;
     }
   }
-  return out;
+  return { desensitized: out, mapping };
 }
 
 function readBody(req) {
@@ -106,7 +111,7 @@ const server = http.createServer(async (req, res) => {
     const payload = JSON.parse(body);
     const content = payload.content || "";
     const entities = detectEntities(content);
-    const desensitized = maskText(content);
+    const { desensitized, mapping } = maskText(content);
     const uniqueTypes = [...new Set(entities.map((e) => e.type))];
 
     // 与真实后端一致的决策规则：无敏感→放行；超过 5 类→强制阻断；否则脱敏后放行
@@ -130,6 +135,7 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 200, {
       detectedEntities: entities,
       desensitizedContent: desensitized,
+      maskMapping: mapping,
       auditEventId: "evt-mock-" + requests.length,
       riskLevel,
       decisionAction,

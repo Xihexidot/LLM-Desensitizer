@@ -3,22 +3,165 @@
 <head>
   <meta charset="UTF-8" />
   <title>Mock AI Chat (E2E)</title>
+  <style>
+    body { margin: 0; font-family: sans-serif; display: flex; min-height: 100vh; }
+    #topbar {
+      position: fixed; top: 0; left: 0; right: 0; height: 48px;
+      display: flex; align-items: center; gap: 8px; padding: 0 16px;
+      background: #f8fafc; border-bottom: 1px solid #e2e8f0; z-index: 10;
+    }
+    #topbar button { padding: 4px 10px; font-size: 12px; }
+    #sidebar {
+      width: 240px; margin-top: 48px; padding: 12px; box-sizing: border-box;
+      border-right: 1px solid #e2e8f0; background: #f8fafc; flex-shrink: 0;
+    }
+    .history-item { padding: 8px 10px; border-radius: 6px; font-size: 13px; color: #334155; }
+    .history-item:hover { background: #e2e8f0; }
+    .history-time { font-size: 11px; color: #94a3b8; margin: 0 0 8px 10px; }
+    #chat-main { flex: 1; margin-top: 48px; padding: 16px; box-sizing: border-box; }
+    #messages .message {
+      max-width: 640px; margin: 0 auto 12px; padding: 10px 14px;
+      border-radius: 10px; white-space: pre-wrap; font-size: 14px; line-height: 1.7;
+    }
+    .message.user { background: #dbeafe; color: #1e3a8a; }
+    .message.assistant { background: #f1f5f9; color: #334155; border: 1px solid #e2e8f0; }
+    .system-notice {
+      max-width: 640px; margin: 0 auto 12px; padding: 6px 12px;
+      background: #fef9c3; border: 1px dashed #facc15; border-radius: 8px;
+      font-size: 12px; color: #854d0e;
+    }
+    #chatbox-input { max-width: 640px; margin: 0 auto; }
+    #prompt { width: 100%; box-sizing: border-box; }
+    #sent { white-space: pre-wrap; margin-top: 12px; border-top: 1px dashed #ccc; padding-top: 8px; font-size: 12px; color: #64748b; }
+  </style>
 </head>
 <body>
-  <!-- 模拟主流 AI 对话页面的最小 DOM：textarea + 发送按钮（同一功能容器内） -->
-  <div id="chatbox" style="max-width: 640px; margin: 24px auto; font-family: sans-serif">
-    <h3>模拟 AI 对话页面</h3>
-    <textarea id="prompt" rows="6" style="width: 100%" placeholder="输入消息"></textarea>
-    <br /><br />
-    <button id="send" type="button">发送</button>
-    <div id="sent" style="white-space: pre-wrap; margin-top: 12px; border-top: 1px dashed #ccc; padding-top: 8px"></div>
-  </div>
+  <!-- 模拟主流 AI 对话页面：顶栏 + 侧边栏历史聊天 + 核心对话区 + 输入区 -->
+  <header id="topbar">
+    <span>模拟 AI 对话页面</span>
+    <button type="button">复制原文</button>
+    <button type="button">关闭</button>
+  </header>
+
+  <!-- 侧边栏：历史聊天标题、时间标记与功能按钮（一键复原必须排除的噪声） -->
+  <aside id="sidebar">
+    <button type="button" id="btnNewChat">开启新对话</button>
+    <button type="button" id="btnPin">置顶</button>
+    <div class="history-item">基于Web框架的具体业务API开发</div>
+    <div class="history-time">昨天 21:15</div>
+    <div class="history-item">数据库速通</div>
+    <div class="history-time">昨天 19:42</div>
+    <div class="history-item">囚徒健身新手计划</div>
+    <div class="history-time">前天 10:08</div>
+    <div class="history-item">课程大纲整理</div>
+    <div class="history-item">周报生成助手</div>
+    <div class="history-item">简历优化建议</div>
+    <div class="history-item">代码评审清单</div>
+    <div class="history-item">市场调研报告</div>
+    <div class="history-item">学习方法总结</div>
+  </aside>
+
+  <!-- 核心对话区：历史消息使用 DeepSeek 新版 DOM（.ds-message 系列，无 data-role 属性），
+       模拟"消息结构未适配也能通过脱敏标记锚点定位"的场景；最新发送仍带 data-role 对齐 ChatGPT 系 -->
+  <main id="chat-main">
+    <section id="messages">
+      <div class="system-notice">系统提示：当前对话已开启隐私保护，请勿传输敏感信息。</div>
+
+      <!-- 历史轮次一：较早的对话（一键复原必须排除，DeepSeek 风格结构） -->
+      <div data-virtual-list-item-key="1">
+        <div class="ds-message ds-user-message"><div class="ds-markdown">帮我写一份本周工作周报。</div></div>
+      </div>
+      <div data-virtual-list-item-key="2">
+        <div class="ds-message ds-assistant-message"><div class="ds-markdown">
+          AI 回复：好的，为您整理周报模板：
+          一、本周工作
+          1. 完成需求评审与排期
+          2. 修复 3 个线上缺陷
+          3. 输出技术方案文档
+          建议补充具体数据后提交。
+        </div></div>
+      </div>
+
+      <!-- 历史轮次二：带 DeepSeek 思考残留 + 平台名标签 + 脱敏标记的历史对话 -->
+      <div data-virtual-list-item-key="3">
+        <div class="ds-message ds-user-message"><div class="ds-markdown">帮我查一下银行卡 6217001234567890 的余额。</div></div>
+      </div>
+      <div data-virtual-list-item-key="4">
+        <div class="ds-message ds-assistant-message"><div class="ds-markdown">
+          <details>
+            <summary>已深度思考（用时 8 秒）</summary>
+            <div class="ds-think">用户提供了银行卡号 6217001234567890，属于建设银行借记卡，余额查询需要调取账户信息。</div>
+          </details>
+          DeepSeek
+          AI 回复：您的银行卡 [BANK_CARD_1] 当前余额为 8,520.00 元。
+          2026-08-12 09:20
+        </div></div>
+      </div>
+
+      <!-- 历史轮次三：较早的普通对话 -->
+      <div data-virtual-list-item-key="5">
+        <div class="ds-message ds-user-message"><div class="ds-markdown">数据库速通怎么学最快？</div></div>
+      </div>
+      <div data-virtual-list-item-key="6">
+        <div class="ds-message ds-assistant-message"><div class="ds-markdown">
+          AI 回复：建议先掌握 SQL 增删改查，再学习索引与事务，最后通过项目实战巩固。
+        </div></div>
+      </div>
+    </section>
+    <div id="chatbox-input">
+      <textarea id="prompt" rows="4" placeholder="输入消息"></textarea>
+      <br /><br />
+      <button id="send" type="button">发送</button>
+    </div>
+    <div id="sent"></div>
+  </main>
+
   <script>
-    // 点击发送后，把当前输入框内容写入 #sent 供断言（验证插件脱敏后再放行）
+    // 点击发送后：把输入内容写入 #sent（供断言），并追加用户消息与 AI 回复消息节点。
+    // AI 回复会把输入中的脱敏标记带回（如 AI 复述用户提供的脱敏数据），
+    // 同时附带系统提示与时间戳等噪声行，验证一键复原的"仅提取核心对话"能力。
     document.getElementById("send").addEventListener("click", function () {
       var v = document.getElementById("prompt").value;
       document.getElementById("sent").textContent = "SENT: " + v;
       document.getElementById("prompt").value = "";
+      var tokens = v.match(/\[[A-Z_]+_\d+\]/g) || [];
+      var msgBox = document.getElementById("messages");
+
+      var userMsg = document.createElement("div");
+      userMsg.className = "message user";
+      userMsg.setAttribute("data-message-author-role", "user");
+      userMsg.textContent = v;
+      msgBox.appendChild(userMsg);
+
+      var aiMsg = document.createElement("div");
+      aiMsg.className = "message assistant";
+      aiMsg.id = "ai-reply";
+      aiMsg.setAttribute("data-message-author-role", "assistant");
+      var reply =
+        tokens.length > 0
+          ? "AI 回复：已收到您的信息（" + tokens.join("、") + "），我们将为您妥善处理。"
+          : "AI 回复：好的，已收到您的消息。";
+      aiMsg.textContent =
+        reply + "\n2026-08-13 14:30\n本回答由 AI 生成，内容仅供参考，请仔细甄别";
+      // 追加 DeepSeek 思考残留块（展开态，推理文本真实进入 innerText）与平台名标签行，
+      // 验证一键复原能按块剔除思考内容、按行过滤模式残留。
+      var think = document.createElement("details");
+      think.open = true;
+      think.className = "ds-think";
+      var sum = document.createElement("summary");
+      sum.textContent = "已深度思考（用时 12 秒）";
+      var thinkBody = document.createElement("div");
+      thinkBody.textContent =
+        "好的，用户询问银行卡余额查询。我核对了 6217001234567890 开头的卡号，" +
+        "判断属于建设银行借记卡，状态正常，可以继续查询。";
+      think.appendChild(sum);
+      think.appendChild(thinkBody);
+      aiMsg.appendChild(think);
+      var platformTag = document.createElement("div");
+      platformTag.className = "ds-platform";
+      platformTag.textContent = "DeepSeek";
+      aiMsg.appendChild(platformTag);
+      msgBox.appendChild(aiMsg);
     });
   </script>
 </body>

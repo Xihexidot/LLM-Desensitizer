@@ -334,6 +334,11 @@
       const riskLevel = result?.riskLevel || "NONE";
       const decisionAction = result?.decisionAction || "ALLOW";
 
+      // 保存脱敏映射（占位符 → 明文），供"一键复原"将 AI 回复中的脱敏标记还原为原始数据
+      if (result && typeof result.maskMapping === "object") {
+        saveMaskMapping(result.maskMapping);
+      }
+
       log(
         "reviewAndContinue: detection result — riskLevel=",
         riskLevel,
@@ -370,6 +375,8 @@
       if (choice === "send") {
         notifyConfirmAction(auditEventId, "DESENSITIZE_AND_SEND");
         continueSend({ input, trigger, content: desensitizedContent });
+        // 发送脱敏内容后注入"一键复原"悬浮按钮：等待 AI 返回后一键还原完整原始内容
+        showRestoreFAB();
       } else if (choice === "send-original") {
         notifyConfirmAction(auditEventId, "SEND_ORIGINAL");
         continueSend({ input, trigger, content });
@@ -579,5 +586,523 @@
     return (t.match(/[\u4e00-\u9fa5]/g) || []).length > t.length * 0.3
       ? "zh"
       : "en";
+  }
+
+  // ====== 一键复原：将 AI 回复中的脱敏标记还原为发送前的原始数据 ======
+  // 映射存放于会话级 chrome.storage.session，content script 无权直接访问，
+  // 统一经 background（特权上下文）中转读写，浏览器关闭即清空。
+
+  function saveMaskMapping(maskMapping) {
+    if (!maskMapping || typeof maskMapping !== "object") return;
+    chrome.runtime
+      .sendMessage({ type: "save-mask-mapping", payload: maskMapping })
+      .catch((e) => log("saveMaskMapping failed:", e?.message));
+  }
+
+  function loadMaskMapping() {
+    return new Promise((resolve) => {
+      chrome.runtime
+        .sendMessage({ type: "load-mask-mapping" })
+        .then((r) => resolve(r?.maskMapping || {}))
+        .catch(() => resolve({}));
+    });
+  }
+
+  // ====== 一键复原：对话区定位 + 消息单元抽取 ======
+  // 目标：仅提取当前活跃对话的核心内容，排除侧边栏历史标题、系统提示、
+  // 功能按钮、脱敏提示等无关元素。
+  // 定位策略（简洁版，无复杂打分）：
+  //  1. 锚点 = 最后一个含脱敏标记的元素（AI 回复必然复述标记，天然指向最新回复）；
+  //  2. 从锚点向上回溯到"含多个消息单元"的对话容器（遇侧边栏特征即止）；
+  //  3. 以锚点为界截断抽取，仅保留最新一轮"用户提问 + AI 回复"。
+  // 锚点法天然规避侧边栏：侧边栏与对话区是兄弟节点，不可能成为锚点的祖先，
+  // 因此无论页面如何布局，抽取范围都不会扩散到侧边栏。
+
+  /** 消息单元选择器：覆盖 DeepSeek / ChatGPT / 豆包 / Gemini / Kimi 各系 DOM */
+  const MESSAGE_SELECTOR = [
+    "[data-message-author-role]",
+    "[data-testid='conversation-turn']",
+    ".ds-message",
+    ".ds-user-message",
+    ".ds-assistant-message",
+    ".assistant-message",
+    ".user-message",
+    ".message-content",
+    ".ds-markdown",
+    ".markdown",
+    ".prose",
+  ].join(", ");
+
+  /** 是否为插件自身 DOM（悬浮按钮 / 复原面板 / 提示层），提取与定位时必须排除 */
+  function isPluginDom(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if (el.closest) {
+      try {
+        if (
+          el.closest(
+            "#ai-guard-restore-panel, #ai-guard-restore-fab, [data-ai-guard='true']",
+          )
+        ) {
+          return true;
+        }
+      } catch {
+        /* 忽略非法选择器 */
+      }
+    }
+    if (el.id && el.id.indexOf("ai-guard-") === 0) return true;
+    if (el.getAttribute && el.getAttribute("data-ai-guard") === "true") {
+      return true;
+    }
+    return false;
+  }
+
+  /** 是否为非对话结构元素（侧边栏 / 导航 / 顶栏等），上溯定位时作为对话边界 */
+  function isNonConversationEl(el) {
+    const tag = (el.tagName || "").toLowerCase();
+    if (["aside", "nav", "header", "footer"].includes(tag)) return true;
+    const cls = typeof el.className === "string" ? String(el.className) : "";
+    const hay = (String(el.id || "") + " " + cls).toLowerCase();
+    return [
+      "sidebar",
+      "side-bar",
+      "sidenav",
+      "navbar",
+      "toolbar",
+      "menubar",
+      "chat-list",
+      "session-list",
+      "conversation-list",
+      "history",
+      "topbar",
+    ].some((h) => hay.indexOf(h) !== -1);
+  }
+
+  /** 元素简述（tag#id.class），用于日志与调试信息 */
+  function descEl(el) {
+    if (!el) return "null";
+    if (el === document) return "document";
+    if (el === document.body) return "document.body";
+    const tag = (el.tagName || "").toLowerCase();
+    const cls = typeof el.className === "string" ? String(el.className) : "";
+    return (
+      tag +
+      (el.id ? "#" + el.id : "") +
+      (cls ? "." + cls.trim().split(/\s+/).join(".") : "")
+    );
+  }
+
+  /** 是否为可见元素（隐藏节点不参与抽取） */
+  function isVisible(el) {
+    if (!el) return false;
+    if (el.hidden) return false;
+    if (el.getAttribute && el.getAttribute("aria-hidden") === "true")
+      return false;
+    try {
+      const st = window.getComputedStyle(el);
+      if (st.display === "none" || st.visibility === "hidden") return false;
+      if (Number(st.opacity || "1") === 0) return false;
+    } catch {
+      /* 取不到样式时视为可见 */
+    }
+    return true;
+  }
+
+  /** 兜底：整页寻找脱敏标记最集中的元素（页面无消息节点结构时使用） */
+  function findMaskedAreaFallback() {
+    let best = null;
+    let bestN = 0;
+    const all = document.querySelectorAll("body *");
+    for (const el of all) {
+      if (isPluginDom(el) || isNonConversationEl(el)) continue;
+      const m = (el.textContent || "").match(/\[\w+_\d+\]/g);
+      if (m && m.length > bestN) {
+        bestN = m.length;
+        best = el;
+      }
+    }
+    return best;
+  }
+
+  /** 全文档查找最后一个含脱敏标记的文本所在元素（业务锚点：AI 回复必然复述标记） */
+  function findMarkAnchor() {
+    const MASK_RE = /\[[^\[\]]+_\d+\]/;
+    const walker = document.createTreeWalker(
+      document.body,
+      NodeFilter.SHOW_TEXT,
+    );
+    let node = null;
+    let anchor = null;
+    while ((node = walker.nextNode())) {
+      const p = node.parentElement;
+      if (p && !isPluginDom(p) && MASK_RE.test(node.data)) {
+        anchor = p;
+      }
+    }
+    return anchor;
+  }
+
+  /** 元素内含多少个消息单元（可见、非插件 DOM） */
+  function countMessageUnits(el) {
+    return Array.from(el.querySelectorAll(MESSAGE_SELECTOR)).filter(
+      (n) => !isPluginDom(n) && isVisible(n),
+    ).length;
+  }
+
+  /**
+   * 定位当前活跃对话区域（简洁版，无复杂打分）：
+   * 1. 锚点 = 最后一个含脱敏标记的元素（AI 回复必然复述标记，天然指向最新回复）；
+   *    页面无标记时退化为最后一个用户消息 / 最后一条消息；
+   * 2. 从锚点向上回溯：遇到含 ≥2 个消息单元的祖先即采用（对话容器），
+   *    遇 aside/nav/侧边栏特征立即停止（对话边界）；
+   * 3. 无任何锚点时回退到 main / 脱敏标记最集中的元素；
+   *    绝不回退到 document.body，避免侧边栏等无关内容混入复原结果。
+   */
+  function findActiveConversationArea() {
+    let anchor = findMarkAnchor();
+    if (!anchor) {
+      const all = collectMessageNodes(document);
+      if (all.length > 0) {
+        anchor = all[all.length - 1];
+        for (let i = all.length - 1; i >= 0; i--) {
+          if (isUserMessage(all[i])) {
+            anchor = all[i];
+            break;
+          }
+        }
+      }
+    }
+    if (!anchor) {
+      return (
+        findMaskedAreaFallback() ||
+        document.querySelector("main, [role='main']") ||
+        null
+      );
+    }
+    let cur = anchor.parentElement;
+    let area = cur || anchor;
+    while (cur && cur !== document.body) {
+      if (isNonConversationEl(cur)) break; // 已到对话边界，停留于边界之下
+      const tag = (cur.tagName || "").toLowerCase();
+      if (
+        tag === "main" ||
+        cur.getAttribute("role") === "main" ||
+        countMessageUnits(cur) >= 2
+      ) {
+        area = cur;
+        break;
+      }
+      area = cur;
+      cur = cur.parentElement;
+    }
+    log("locate area ->", descEl(area), "| anchor ->", descEl(anchor));
+    return area;
+  }
+
+  /**
+   * 按消息单元收集容器内可见消息节点（去重嵌套，保持文档顺序）。
+   */
+  function collectMessageNodes(container) {
+    if (!container) return [];
+    const all = Array.from(container.querySelectorAll(MESSAGE_SELECTOR));
+    if (container.matches && container.matches(MESSAGE_SELECTOR)) {
+      all.unshift(container);
+    }
+    const out = [];
+    for (const node of all) {
+      if (isPluginDom(node) || !isVisible(node)) continue;
+      // 嵌套结构（如 .markdown 位于 .message-content 内）只取外层，避免重复
+      let anc = node.parentElement;
+      let covered = false;
+      while (anc && anc !== container) {
+        if (anc.matches && anc.matches(MESSAGE_SELECTOR)) {
+          covered = true;
+          break;
+        }
+        anc = anc.parentElement;
+      }
+      if (covered) continue;
+      out.push(node);
+    }
+    return out;
+  }
+
+  /** 判断消息节点是否为"用户消息"（data-message-author-role=user 或 user 类名） */
+  function isUserMessage(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (
+      node.getAttribute &&
+      node.getAttribute("data-message-author-role") === "user"
+    ) {
+      return true;
+    }
+    const cls =
+      node.className && typeof node.className === "string"
+        ? String(node.className)
+        : "";
+    return /(^|[\s-])user-?/.test(cls);
+  }
+
+  /** 是否为思考/推理残留块（DeepSeek 深度思考、ChatGPT reasoning 等），抽取时整块剔除 */
+  function isReasoningNode(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const cls =
+      el.className && typeof el.className === "string"
+        ? String(el.className)
+        : "";
+    const hay = (
+      String(el.id || "") +
+      " " +
+      cls +
+      " " +
+      (el.getAttribute("aria-label") || "")
+    ).toLowerCase();
+    return /think|reasoning|deep-?think|分析|思考/.test(hay);
+  }
+
+  /**
+   * 取消息文本：剔除 DeepSeek 深度思考 / 推理残留块后再返回（保留换行）。
+   * 推理内容为任意文本、无法用行级正则穷举，必须在 DOM 层按块剔除：
+   * 命中思考标记（class/id/aria-label 含 think/reasoning/思考，或折叠面板首行
+   * 为"已深度思考/思考过程"）的 details 及其内容整体排除。
+   */
+  function safeMessageText(node) {
+    const full = (node.innerText || node.textContent || "").trim();
+    if (!full) return "";
+    let text = full;
+    const blocks = node.querySelectorAll(
+      "details, [class*='think' i], [id*='think' i], [class*='reasoning' i], [aria-label*='思考'], [aria-label*='think' i]",
+    );
+    for (const block of blocks) {
+      if (!isVisible(block) || isPluginDom(block)) continue;
+      const label = (block.innerText || "").slice(0, 30);
+      const byLabel = /深度思考|思考过程|已深度思考/.test(label);
+      if (!isReasoningNode(block) && !byLabel) continue;
+      const rt = (block.innerText || "").trim();
+      if (rt && text.includes(rt)) text = text.replace(rt, "");
+    }
+    return text.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  /** 容器纯文本（克隆后剔除思考/推理残留块，避免直接修改页面 DOM） */
+  function containerTextWithoutThinking(container) {
+    const clone = container.cloneNode(true);
+    clone
+      .querySelectorAll(
+        "details, [class*='think' i], [id*='think' i], [class*='reasoning' i], [aria-label*='思考'], [aria-label*='think' i]",
+      )
+      .forEach((block) => {
+        const label = (block.innerText || "").slice(0, 30);
+        const byLabel = /深度思考|思考过程|已深度思考/.test(label);
+        if (isReasoningNode(block) || byLabel) block.remove();
+      });
+    return (clone.innerText || "").replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  /**
+   * 抽取"最近一条对话"（一键复原专用）：
+   * 从最后一个用户消息开始截取到末尾（含其 AI 回复），
+   * 过滤更早的历史消息、标题冗余与 DeepSeek 思考模式残留，
+   * 仅保留最新单条对话的用户提问与 AI 回复纯文本。
+   * 消息结构无法识别时退化为容器纯文本（容器已精确限定为对话区，
+   * 不含侧边栏；配合行级噪声过滤与思考块剔除保证输出干净）。
+   */
+  function extractLatestTurnText(container) {
+    if (!container) return "";
+    const nodes = collectMessageNodes(container);
+    if (nodes.length === 0) {
+      return containerTextWithoutThinking(container);
+    }
+    let start = nodes.length;
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (isUserMessage(nodes[i])) {
+        start = i;
+        break;
+      }
+    }
+    // 无用户消息时仅取最后一条消息（如连续回复/思考续写流）；
+    // 否则取最后一个用户提问及其后的全部回复（通常为单条 AI 回复）。
+    const latest =
+      start === nodes.length ? [nodes[nodes.length - 1]] : nodes.slice(start);
+    const parts = [];
+    const seen = new Set();
+    for (const node of latest) {
+      const text = safeMessageText(node);
+      if (!text || seen.has(text)) continue;
+      seen.add(text);
+      parts.push(text);
+    }
+    return parts.join("\n");
+  }
+
+  let restoreFabEl = null;
+  let restorePanelEl = null;
+
+  /** 注入"一键复原"悬浮按钮（幂等：已存在则不重复创建） */
+  function showRestoreFAB() {
+    if (restoreFabEl && document.body.contains(restoreFabEl)) return;
+    const fab = document.createElement("button");
+    fab.id = "ai-guard-restore-fab";
+    fab.type = "button";
+    fab.textContent = "一键复原";
+    fab.title = "将 AI 回复中的脱敏标记还原为发送前的完整原始内容";
+    fab.style.cssText =
+      "position:fixed;bottom:80px;right:24px;z-index:2147483646;background:#059669;color:#fff;" +
+      "border:none;border-radius:999px;padding:10px 18px;font-size:14px;font-family:sans-serif;" +
+      "cursor:pointer;box-shadow:0 4px 14px rgba(5,150,105,.35);transition:transform .15s;";
+    fab.addEventListener(
+      "mouseenter",
+      () => (fab.style.transform = "scale(1.05)"),
+    );
+    fab.addEventListener(
+      "mouseleave",
+      () => (fab.style.transform = "scale(1)"),
+    );
+    fab.addEventListener("click", onRestoreClick);
+    restoreFabEl = fab;
+    document.body.appendChild(fab);
+    showActionToast("已注入一键复原按钮");
+  }
+
+  /** 定位容器内最后一个用户消息节点（无用户消息则取最后一条消息） */
+  function lastUserMessageNode(area) {
+    const nodes = collectMessageNodes(area || document);
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      if (isUserMessage(nodes[i])) return nodes[i];
+    }
+    return nodes[nodes.length - 1] || null;
+  }
+
+  /** 收集一键复原的调试信息（供用户一键复制反馈，辅助真实站点排障） */
+  function buildDebugInfo(area, rawText, decoded) {
+    const nodes = collectMessageNodes(area);
+    return {
+      url: location.href,
+      area: descEl(area),
+      anchor: descEl(findMarkAnchor() || lastUserMessageNode(area)),
+      messageCount: nodes.length,
+      messages: nodes.slice(0, 30).map((n) => ({
+        el: descEl(n),
+        text: (n.innerText || "").replace(/\s+/g, " ").slice(0, 60),
+      })),
+      rawTextLength: rawText.length,
+      rawTextPreview: rawText.slice(0, 600),
+      restoredTextPreview: (decoded.text || "").slice(0, 600),
+      replacedCount: decoded.replacedCount,
+    };
+  }
+
+  async function onRestoreClick() {
+    const maskMapping = await loadMaskMapping();
+    const area = findActiveConversationArea();
+    if (!area) {
+      showActionToast("未定位到对话区域，请确认页面已加载当前对话");
+      return;
+    }
+    const rawText = extractLatestTurnText(area);
+    if (!rawText) {
+      showActionToast("未提取到对话内容，请确认页面已加载当前对话");
+    }
+    const decoded = AIGuardDecode.decodeWithHighlights(rawText, maskMapping);
+    const debugInfo = buildDebugInfo(area, rawText, decoded);
+    log("restore debug:", debugInfo);
+    showRestorePanel(decoded, debugInfo);
+  }
+
+  /** 展示"完整原始内容"复原面板：高亮展示还原结果，可复制原文 */
+  function showRestorePanel(decoded, debugInfo) {
+    if (restorePanelEl && restorePanelEl.parentNode) {
+      restorePanelEl.remove();
+    }
+    const panel = document.createElement("div");
+    panel.id = "ai-guard-restore-panel";
+    panel.style.cssText =
+      "position:fixed;right:24px;bottom:130px;width:min(520px,calc(100vw - 48px));max-height:60vh;" +
+      "background:#ffffff;border:1px solid #d1fae5;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.18);" +
+      "z-index:2147483647;display:flex;flex-direction:column;overflow:hidden;font-family:sans-serif;";
+
+    const header = document.createElement("div");
+    header.style.cssText =
+      "display:flex;align-items:center;gap:8px;padding:10px 14px;background:#ecfdf5;" +
+      "border-bottom:1px solid #d1fae5;font-size:13px;color:#065f46;font-weight:600;";
+    const title = document.createElement("span");
+    title.style.cssText = "flex:1;";
+    title.textContent =
+      decoded.replacedCount > 0
+        ? `完整原始内容（已还原 ${decoded.replacedCount} 处脱敏标记）`
+        : "完整原始内容（未发现可还原的脱敏标记）";
+    const btnCopy = document.createElement("button");
+    btnCopy.id = "agrCopy";
+    btnCopy.textContent = "复制原文";
+    btnCopy.style.cssText =
+      "background:#059669;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;";
+    btnCopy.addEventListener("click", () =>
+      copyRestoredText(decoded.text, btnCopy),
+    );
+    const btnDebug = document.createElement("button");
+    btnDebug.id = "agrDebug";
+    btnDebug.textContent = "复制调试信息";
+    btnDebug.title = "复制定位与抽取日志，便于向开发者反馈问题";
+    btnDebug.style.cssText =
+      "background:#e2e8f0;color:#475569;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;";
+    btnDebug.addEventListener("click", () =>
+      copyRestoredText(
+        JSON.stringify(debugInfo || {}, null, 2),
+        btnDebug,
+        "已复制调试信息",
+        "复制调试信息",
+      ),
+    );
+    const btnClose = document.createElement("button");
+    btnClose.id = "agrClose";
+    btnClose.textContent = "关闭";
+    btnClose.style.cssText =
+      "background:#e2e8f0;color:#475569;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;";
+    btnClose.addEventListener("click", () => panel.remove());
+    header.append(title, btnCopy, btnDebug, btnClose);
+
+    const body = document.createElement("div");
+    body.id = "agrBody";
+    body.style.cssText =
+      "padding:12px 14px;overflow:auto;font-size:13px;line-height:1.7;color:#1e293b;white-space:pre-wrap;word-break:break-all;";
+    body.innerHTML = decoded.html; // decodeWithHighlights 已对所有动态内容转义，仅高亮 <mark>
+
+    const style = document.createElement("style");
+    style.textContent =
+      "#ai-guard-restore-panel mark{background:#fde68a;color:#78350f;border-radius:3px;padding:0 2px;}";
+
+    panel.append(style, header, body);
+    restorePanelEl = panel;
+    document.body.appendChild(panel);
+  }
+
+  function copyRestoredText(text, btn, doneText, idleText) {
+    const done = () => {
+      btn.textContent = doneText || "已复制";
+      setTimeout(() => (btn.textContent = idleText || "复制原文"), 1200);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(done)
+        .catch(() => fallbackCopy(text, done));
+    } else {
+      fallbackCopy(text, done);
+    }
+  }
+
+  function fallbackCopy(text, done) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+      done();
+    } catch {
+      /* 忽略复制失败 */
+    }
   }
 })();
