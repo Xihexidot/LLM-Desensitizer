@@ -622,6 +622,8 @@
   const MESSAGE_SELECTOR = [
     "[data-message-author-role]",
     "[data-testid='conversation-turn']",
+    "[data-testid='message-block-container']",
+    "[data-testid='chat_message_item']",
     ".ds-message",
     ".ds-user-message",
     ".ds-assistant-message",
@@ -631,6 +633,7 @@
     ".ds-markdown",
     ".markdown",
     ".prose",
+    ".bg-g-send-msg-bubble-bg",
   ].join(", ");
 
   /** 是否为插件自身 DOM（悬浮按钮 / 复原面板 / 提示层），提取与定位时必须排除 */
@@ -707,13 +710,27 @@
     return true;
   }
 
+  /** 非可见数据节点标签（script/style 内的文本是序列化数据，不能作为业务锚点） */
+  const INVISIBLE_TEXT_TAGS = new Set([
+    "SCRIPT",
+    "STYLE",
+    "NOSCRIPT",
+    "TEMPLATE",
+  ]);
+
   /** 兜底：整页寻找脱敏标记最集中的元素（页面无消息节点结构时使用） */
   function findMaskedAreaFallback() {
     let best = null;
     let bestN = 0;
     const all = document.querySelectorAll("body *");
     for (const el of all) {
-      if (isPluginDom(el) || isNonConversationEl(el)) continue;
+      if (
+        isPluginDom(el) ||
+        isNonConversationEl(el) ||
+        INVISIBLE_TEXT_TAGS.has((el.tagName || "").toUpperCase())
+      ) {
+        continue;
+      }
       const m = (el.textContent || "").match(/\[\w+_\d+\]/g);
       if (m && m.length > bestN) {
         bestN = m.length;
@@ -729,6 +746,15 @@
     const walker = document.createTreeWalker(
       document.body,
       NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          const p = node.parentElement;
+          if (!p || INVISIBLE_TEXT_TAGS.has(p.tagName)) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        },
+      },
     );
     let node = null;
     let anchor = null;
@@ -826,7 +852,7 @@
     return out;
   }
 
-  /** 判断消息节点是否为"用户消息"（data-message-author-role=user 或 user 类名） */
+  /** 判断消息节点是否为"用户消息"（data-message-author-role=user、user 类名或豆包用户气泡） */
   function isUserMessage(node) {
     if (!node || node.nodeType !== 1) return false;
     if (
@@ -839,7 +865,11 @@
       node.className && typeof node.className === "string"
         ? String(node.className)
         : "";
-    return /(^|[\s-])user-?/.test(cls);
+    if (/(^|[\s-])user-?/.test(cls)) return true;
+    // 豆包用户气泡：class 含 bg-g-send-msg-bubble（发送气泡）；助手消息不带 send
+    if (/bg-g-send-msg-bubble/.test(cls)) return true;
+    // 助手气泡（豆包老结构）不匹配 send-msg-bubble，保持默认 false
+    return false;
   }
 
   /** 是否为思考/推理残留块（DeepSeek 深度思考、ChatGPT reasoning 等），抽取时整块剔除 */
