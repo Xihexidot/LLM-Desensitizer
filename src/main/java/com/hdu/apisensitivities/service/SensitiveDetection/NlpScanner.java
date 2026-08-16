@@ -8,7 +8,11 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import java.util.*;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Slf4j
@@ -18,14 +22,40 @@ public class NlpScanner {
     @Autowired
     private RestTemplate restTemplate;
 
-    private final String OLLAMA_URL = "http://localhost:11434/api/generate";
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // ==================== ✨ 核心修改：动态识别模型名 ✨ ====================
-    // 从环境变量或配置文件中读取本地模型名称，若未配置则默认降级使用 "qwen:1.8b"
-    @Value("${LOCAL_AGENT_MODEL_NAME:qwen:1.8b}")
+    @Value("${local.agent.enabled:true}")
+    private boolean enabled;
+
+    @Value("${local.agent.url:http://127.0.0.1:11434/api/generate}")
+    private String agentUrl;
+
+    @Value("${local.agent.health-url:http://127.0.0.1:11434/api/tags}")
+    private String healthUrl;
+
+    @Value("${local.agent.mode:OLLAMA_LOCAL}")
+    private String agentMode;
+
+    @Value("${local.agent.model:deepseek-r1:1.5b}")
     private String modelName;
-    // =====================================================================
+
+    public record AgentStatus(boolean enabled, boolean reachable, String mode, String endpoint, String model,
+            String message) {
+    }
+
+    public AgentStatus getStatus() {
+        if (!enabled) {
+            return new AgentStatus(false, false, agentMode, agentUrl, modelName, "本地/远程 Agent 增强未启用");
+        }
+
+        try {
+            restTemplate.getForObject(healthUrl, String.class);
+            return new AgentStatus(true, true, agentMode, agentUrl, modelName, "Agent 服务可访问");
+        } catch (Exception e) {
+            log.warn("Agent 探活失败: {}", e.getMessage());
+            return new AgentStatus(true, false, agentMode, agentUrl, modelName, e.getMessage());
+        }
+    }
 
     /**
      * 核心功能 1：命名实体识别 (NER)
@@ -33,6 +63,12 @@ public class NlpScanner {
      */
     public List<String> extractEntities(String text) {
         if (text == null || text.trim().isEmpty()) {
+            return Collections.emptyList();
+        }
+
+        AgentStatus status = getStatus();
+        if (!status.reachable()) {
+            log.info("跳过 Agent 语义提取，状态: {}", status.message());
             return Collections.emptyList();
         }
 
@@ -45,10 +81,10 @@ public class NlpScanner {
         request.put("stream", false);
 
         try {
-            log.info("Agent 正在提取实体，使用模型: {}", this.modelName);
-            String jsonResponse = restTemplate.postForObject(OLLAMA_URL, request, String.class);
+            log.info("Agent 正在提取实体，模式: {}, 模型: {}, 地址: {}", this.agentMode, this.modelName, this.agentUrl);
+            String jsonResponse = restTemplate.postForObject(agentUrl, request, String.class);
             JsonNode root = objectMapper.readTree(jsonResponse);
-            String aiResult = root.get("response").asText();
+            String aiResult = root.path("response").asText("");
 
             return processRawAiString(aiResult);
         } catch (Exception e) {
@@ -63,6 +99,12 @@ public class NlpScanner {
      */
     public boolean checkSafety(String textOrPrompt) {
         if (textOrPrompt == null || textOrPrompt.trim().isEmpty()) {
+            return false;
+        }
+
+        AgentStatus status = getStatus();
+        if (!status.reachable()) {
+            log.info("跳过 Agent 安全复检，状态: {}", status.message());
             return false;
         }
 
@@ -83,10 +125,10 @@ public class NlpScanner {
         request.put("stream", false);
 
         try {
-            log.debug("正在向 Ollama 发送反思请求，模型: {}", this.modelName);
-            String jsonResponse = restTemplate.postForObject(OLLAMA_URL, request, String.class);
+            log.debug("正在向 Agent 发送反思请求，模式: {}, 模型: {}", this.agentMode, this.modelName);
+            String jsonResponse = restTemplate.postForObject(agentUrl, request, String.class);
             JsonNode root = objectMapper.readTree(jsonResponse);
-            String aiResult = root.get("response").asText().trim();
+            String aiResult = root.path("response").asText("").trim();
 
             log.info("Agent 审计原始回复: {}", aiResult);
             // 兼容可能出现的英文字样，判定是否包含“危险”或“DANGEROUS”

@@ -30,14 +30,52 @@ class NlpScannerTest {
 
     @BeforeEach
     void setUp() {
-        // 注入默认模型名，避免 @Value 依赖 Spring 上下文
+        // 注入默认配置，避免 @Value 依赖 Spring 上下文
+        ReflectionTestUtils.setField(scanner, "enabled", true);
+        ReflectionTestUtils.setField(scanner, "agentUrl", "http://127.0.0.1:11434/api/generate");
+        ReflectionTestUtils.setField(scanner, "healthUrl", "http://127.0.0.1:11434/api/tags");
+        ReflectionTestUtils.setField(scanner, "agentMode", "OLLAMA_LOCAL");
         ReflectionTestUtils.setField(scanner, "modelName", "qwen:1.8b");
+    }
+
+    @Test
+    void getStatus_shouldReturnReachable_whenHealthEndpointAvailable() {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
+
+        NlpScanner.AgentStatus status = scanner.getStatus();
+
+        assertTrue(status.enabled());
+        assertTrue(status.reachable());
+        assertEquals("OLLAMA_LOCAL", status.mode());
+    }
+
+    @Test
+    void getStatus_shouldReturnDisabled_whenAgentTurnedOff() {
+        ReflectionTestUtils.setField(scanner, "enabled", false);
+
+        NlpScanner.AgentStatus status = scanner.getStatus();
+
+        assertFalse(status.enabled());
+        assertFalse(status.reachable());
+    }
+
+    @Test
+    void getStatus_shouldReturnUnreachable_whenHealthEndpointFails() {
+        when(restTemplate.getForObject(anyString(), eq(String.class)))
+                .thenThrow(new RuntimeException("Connection refused"));
+
+        NlpScanner.AgentStatus status = scanner.getStatus();
+
+        assertTrue(status.enabled());
+        assertFalse(status.reachable());
+        assertTrue(status.message().contains("Connection refused"));
     }
 
     // ==================== extractEntities 测试 ====================
 
     @Test
     void extractEntities_shouldReturnList_whenOllamaReturnsCommaSeparated() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String ollamaResponse = objectMapper.writeValueAsString(
                 Map.of("response", "张三, 阿里巴巴, 飞天项目"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -53,6 +91,7 @@ class NlpScannerTest {
 
     @Test
     void extractEntities_shouldReturnEmptyList_whenOllamaReturnsNone() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String ollamaResponse = objectMapper.writeValueAsString(
                 Map.of("response", "无"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -77,6 +116,7 @@ class NlpScannerTest {
 
     @Test
     void extractEntities_shouldHandleChineseAndEnglishCommas() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String response = objectMapper.writeValueAsString(
                 Map.of("response", "Alice, Bob，Charlie，David"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -89,6 +129,7 @@ class NlpScannerTest {
 
     @Test
     void extractEntities_shouldFilterOutSingleCharacterWords() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String response = objectMapper.writeValueAsString(
                 Map.of("response", "张, 王, 李赵"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -102,6 +143,7 @@ class NlpScannerTest {
 
     @Test
     void extractEntities_shouldDeduplicate() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String response = objectMapper.writeValueAsString(
                 Map.of("response", "张三, 张三, 李四"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -113,6 +155,7 @@ class NlpScannerTest {
 
     @Test
     void extractEntities_shouldReturnEmpty_whenOllamaReturnsMalformedJson() {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
                 .thenReturn("这不是 JSON");
 
@@ -122,6 +165,7 @@ class NlpScannerTest {
 
     @Test
     void extractEntities_shouldReturnEmpty_whenOllamaThrowsException() {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
                 .thenThrow(new RuntimeException("Connection refused"));
 
@@ -133,6 +177,7 @@ class NlpScannerTest {
 
     @Test
     void checkSafety_shouldReturnTrue_whenOllamaSaysDangerous() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String response = objectMapper.writeValueAsString(
                 Map.of("response", "危险，文本中仍包含真实人名"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -145,6 +190,7 @@ class NlpScannerTest {
 
     @Test
     void checkSafety_shouldReturnFalse_whenOllamaSaysSafe() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String response = objectMapper.writeValueAsString(
                 Map.of("response", "安全，所有敏感信息已被脱敏"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -157,6 +203,7 @@ class NlpScannerTest {
 
     @Test
     void checkSafety_shouldReturnTrue_whenOllamaSaysDANGEROUS() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String response = objectMapper.writeValueAsString(
                 Map.of("response", "DANGEROUS: Contains real name"));
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
@@ -181,6 +228,7 @@ class NlpScannerTest {
 
     @Test
     void checkSafety_shouldReturnFalse_whenOllamaThrowsException() {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
                 .thenThrow(new RuntimeException("Ollama not running"));
 
@@ -190,6 +238,7 @@ class NlpScannerTest {
 
     @Test
     void checkSafety_shouldUseRagMode_whenPromptContainsSystemDirective() throws Exception {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         String ragPrompt = "【系统指令】你是一个客服\n【参考合规法规】数据安全法\n请回答用户的问题";
         String response = objectMapper.writeValueAsString(
                 Map.of("response", "安全"));
@@ -204,6 +253,7 @@ class NlpScannerTest {
 
     @Test
     void checkSafety_shouldReturnFalse_whenOllamaResponseMissingResponseField() {
+        when(restTemplate.getForObject(anyString(), eq(String.class))).thenReturn("{\"models\":[]}");
         when(restTemplate.postForObject(anyString(), any(), eq(String.class)))
                 .thenReturn("{}");
 

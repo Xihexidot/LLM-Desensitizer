@@ -35,7 +35,7 @@
 </head>
 <body>
   <h2>AI 输入安全助手</h2>
-  <p class="sub">配置网关服务器地址与员工身份</p>
+  <p class="sub">配置网关服务器地址与员工身份，并检测 Agent 增强状态</p>
 
   <div class="row">
     <label>网关服务器 IP:端口</label>
@@ -51,12 +51,12 @@
   </div>
 
   <div class="actions">
-    <button class="btn-test" id="btnTest">测试连接</button>
+    <button class="btn-test" id="btnTest">测试网关/Agent</button>
     <button class="btn-save" id="btnSave">保存</button>
   </div>
 
   <div class="status" id="status"></div>
-  <p class="tip">员工安装插件后需在此填写姓名和部门。</p>
+  <p class="tip">员工安装插件后需在此填写姓名和部门，测试连接会同时检查网关健康状态与 Agent 可用性。</p>
   <p class="tip" style="color:#6366f1">企业部署：IT 管理员通过 Windows Group Policy / Mac MDM 推送工号与部门到 chrome.storage.managed，员工不可修改。</p>
 
   <hr style="border:none;border-top:1px solid #e2e8f0;margin:16px 0 12px;" />

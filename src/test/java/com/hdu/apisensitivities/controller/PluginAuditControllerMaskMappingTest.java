@@ -37,6 +37,7 @@ class PluginAuditControllerMaskMappingTest {
 
                 PluginCheckResponse response = pluginAuditController.auditCheck(request).getBody();
                 assertNotNull(response, "audit-check 必须返回响应体");
+                assertNotNull(response.getDetectionMode(), "响应中应返回检测模式");
 
                 // 脱敏内容必须包含占位符标记
                 assertTrue(response.getDesensitizedContent().contains("["),
@@ -63,6 +64,7 @@ class PluginAuditControllerMaskMappingTest {
                                 .build();
                 PluginCheckResponse plainResp = pluginAuditController.auditCheck(plain).getBody();
                 assertNotNull(plainResp);
+                assertNotNull(plainResp.getDetectionMode(), "无敏感内容时也应返回检测模式");
                 assertNotNull(plainResp.getMaskMapping(), "无敏感内容时也应返回映射（非 null）");
                 // 脱敏内容不含任何占位符 → 映射必须为空（映射与脱敏结果严格联动）
                 if (!plainResp.getDesensitizedContent().matches(".*\\[[^\\[\\]]+_\\d+\\].*")) {

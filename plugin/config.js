@@ -97,8 +97,34 @@ async function testConnection() {
       method: "GET",
     });
     if (res.ok) {
-      statusEl.textContent = `连接成功 (${baseUrl})`;
-      statusEl.className = "status ok";
+      let agentMessage = "Agent 状态未知";
+      let statusClass = "status ok";
+      try {
+        const agentRes = await fetch(`${baseUrl}/plugin/agent/status`, {
+          method: "GET",
+        });
+        if (agentRes.ok) {
+          const agent = await agentRes.json();
+          if (agent.reachable) {
+            agentMessage = `Agent 已就绪（${agent.mode || "OLLAMA"} / ${agent.model || "unknown"}）`;
+          } else if (agent.enabled) {
+            agentMessage = `Agent 不可用，当前将自动降级到正则 + NER（${agent.message || "未就绪"}）`;
+            statusClass = "status";
+          } else {
+            agentMessage = "Agent 增强未启用，当前走正则 + NER";
+            statusClass = "status";
+          }
+        } else {
+          agentMessage = `Agent 状态接口返回 ${agentRes.status}`;
+          statusClass = "status";
+        }
+      } catch (agentError) {
+        agentMessage = `Agent 状态检查失败: ${agentError.message}`;
+        statusClass = "status";
+      }
+
+      statusEl.textContent = `网关连接成功 (${baseUrl})；${agentMessage}`;
+      statusEl.className = statusClass;
     } else {
       statusEl.textContent = `服务器返回 ${res.status}`;
       statusEl.className = "status err";

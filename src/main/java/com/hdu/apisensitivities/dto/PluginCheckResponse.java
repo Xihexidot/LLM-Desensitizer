@@ -21,6 +21,14 @@ public class PluginCheckResponse {
     private String auditEventId;
     private GatewayRiskLevel riskLevel;
     private GatewayDecisionAction decisionAction;
+    private String detectionMode;
+    private boolean agentEnabled;
+    private boolean agentAvailable;
+    private boolean agentUsed;
+    private String agentEndpoint;
+    private String agentModel;
+    private String agentMessage;
+    private List<String> agentSemanticEntities;
 
     /**
      * 脱敏标记与原信息的比对映射（占位符 → 原始明文），供插件"一键复原"解码还原使用。
