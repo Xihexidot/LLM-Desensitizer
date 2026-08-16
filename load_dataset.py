@@ -8,8 +8,8 @@ def export_test_cases():
     dataset = load_dataset("wan9yu/pii-bench-zh", data_files="data/pii_bench_zh_chat.jsonl", split="train")
     
     test_cases = []
-    # 抽取前 500 条（样本量足够大且运行快）
-    for i in range(min(500, len(dataset))):
+    # 抽取前 5000 条（样本量足够大且运行快）
+    for i in range(min(5000, len(dataset))):
         item = dataset[i]
         
         # 构造一个精简的中间格式
